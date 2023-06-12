@@ -29,7 +29,7 @@ class Trial:
         if len(self.X) == 0:
             self.X = o[None,:]
             self.A = np.array([a])
-            self.R = np.array([a])
+            self.R = np.array([r])
             self.Z = h.flatten()[None,:]
             self.Q = q.flatten()[None,:]
         else:

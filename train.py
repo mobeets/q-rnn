@@ -104,6 +104,14 @@ def probe_model_off_policy(model, policymodel, env, nepisodes, ntrials_per_episo
                     cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
                     _, (q, h) = model.sample_action(cobs, h.to(device), epsilon=epsilon)
                     a, (_, hp) = policymodel.sample_action(cobs, hp.to(device), epsilon=epsilon)
+                    
+                    # a = 2
+                    # if obs[0] == 0:
+                    #     z = 0
+                    # else:
+                    #     z += obs[0]
+                    #     if np.abs(z) > 15:
+                    #         a = (z > 15)
 
                     # take action
                     obs_next, r, done, truncated, info = env.step(a)

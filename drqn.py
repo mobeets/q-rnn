@@ -39,12 +39,14 @@ gamma = 0.9 # reward discount factor
 
 # create model
 hidden_size = 8
-Q = DRQN(input_size=2, # stim and reward
+include_prev_reward = True
+include_prev_action = True
+Q = DRQN(input_size=1 + include_prev_reward + include_prev_action, # stim and reward
             hidden_size=hidden_size,
             output_size=env.action_space.n).to(device)
-Q_target = DRQN(input_size=2, # stim and reward
-                    hidden_size=hidden_size,
-                    output_size=env.action_space.n).to(device)
+Q_target = DRQN(input_size=Q.input_size, # stim and reward
+                    hidden_size=Q.hidden_size,
+                    output_size=Q.output_size).to(device)
 Q_target.load_state_dict(Q.state_dict())
 
 # prepare to save
@@ -68,12 +70,16 @@ trials = []
 all_trials = []
 for i in range(episodes):
     r = 0
+    a = np.zeros(env.action_space.n)
     h = Q.init_hidden_state(training=False)
 
     episode_record = EpisodeBuffer()
     for j in range(ntrials_per_episode):
-        obs = env.reset()[0]
-        obs = np.array([obs, r]) # add previous reward
+        obs = np.array([env.reset()[0]])
+        if include_prev_reward:
+            obs = np.hstack([obs, [r]]) # add previous reward
+        if include_prev_action:
+            obs = np.hstack([obs, a]) # add previous action
         done = False
         
         t = 0
@@ -85,7 +91,12 @@ for i in range(episodes):
 
             # take action
             obs_prime, r, done, truncated, info = env.step(a)
-            obs_prime = np.array([obs_prime, r]) # add previous reward
+            obs_prime = np.array([obs_prime])
+            if include_prev_reward:
+                obs_prime = np.hstack([obs_prime, [r]]]) # add previous reward
+            if include_prev_action:
+                a_cur = np.zeros(env.action_space.n); a_cur[a] = 1.
+                obs_prime = np.hstack([obs_prime, a_cur]) # add previous action
 
             # make data
             episode_record.put([obs, a, r/100.0, obs_prime, 0.0 if done else 1.0])

@@ -21,7 +21,7 @@ plt.rcParams['font.family'] = 'Helvetica'
 mpl.rcParams['axes.spines.right'] = False
 mpl.rcParams['axes.spines.top'] = False
 
-#%% load model
+#%% compare belief-like-ness of models, before and after training
 
 seed = 666
 nepisodes = 500; ntrials_per_episode = 1
@@ -29,7 +29,7 @@ reward_amounts = [20, -400, -400, -1]
 env = Roitman2002(reward_amounts=reward_amounts)
 
 Results = {}
-for infile in glob.glob('data/weights_final_*.pth'):
+for infile in glob.glob('data/weights_final_*.pth')[:1]:
     hidden_size = int(infile.split('_h')[1].split('_')[0])
     policymodel = DRQN(input_size=2, # stim and reward
                     hidden_size=hidden_size,
@@ -42,10 +42,16 @@ for infile in glob.glob('data/weights_final_*.pth'):
                     hidden_size=hidden_size,
                     output_size=env.action_space.n).to(device)
         model.load_weights_from_path(cur_infile)
+        # todo: add previous action
 
         # probe model
         env.reset(seed=seed)
         trials = probe_model_off_policy(model, policymodel, env, nepisodes=nepisodes, ntrials_per_episode=ntrials_per_episode)
+        pol_avg_rew = np.hstack([trial.R for trial in trials]).mean()
+        
+        env.reset(seed=seed)
+        trials_onpolicy = probe_model(model, env, nepisodes=nepisodes, ntrials_per_episode=ntrials_per_episode)
+        avg_rew = np.hstack([trial.R for trial in trials_onpolicy]).mean()
 
         # add beliefs
         B, (O, T) = add_beliefs(trials, p_iti=env.iti_p, p_coh=env.p_coh)
@@ -54,7 +60,7 @@ for infile in glob.glob('data/weights_final_*.pth'):
         nTrialsTrain = int(len(trials)/2)
         Trials = {'train': trials[:nTrialsTrain], 'test': trials[nTrialsTrain:]}
         Results[(cur_infile, mode)] = analyze(None, Trials)
-        print(cur_infile, mode, Results[(cur_infile, mode)]['rsq'])
+        print(cur_infile, mode, pol_avg_rew, avg_rew, Results[(cur_infile, mode)]['rsq'])
 
 #%% visualize successful trial
 
