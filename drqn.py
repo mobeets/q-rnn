@@ -12,7 +12,7 @@ from plotting import plot_results
 from tasks.roitman2002 import Roitman2002
 
 # Set gym environment
-reward_amounts = [20, -400, -1]
+reward_amounts = [20, -400, -400, -1]
 env = Roitman2002(reward_amounts=reward_amounts)
 
 # Set parameters
@@ -38,7 +38,7 @@ max_epi_num = 100 # max number of episodes remembered
 gamma = 0.9 # reward discount factor
 
 # create model
-hidden_size = 4
+hidden_size = 8
 Q = DRQN(input_size=2, # stim and reward
             hidden_size=hidden_size,
             output_size=env.action_space.n).to(device)
@@ -48,7 +48,7 @@ Q_target = DRQN(input_size=2, # stim and reward
 Q_target.load_state_dict(Q.state_dict())
 
 # prepare to save
-save_dir = 'data/drqn'
+save_dir = 'data'
 weightsfile_initial = os.path.join(save_dir, 'weights_initial.pth')
 weightsfile_final = os.path.join(save_dir, 'weights_final.pth')
 plotfile = os.path.join(save_dir, 'results.pdf')
@@ -68,7 +68,7 @@ trials = []
 all_trials = []
 for i in range(episodes):
     r = 0
-    h = Q.init_hidden_state(batch_size=batch_size, training=False)
+    h = Q.init_hidden_state(training=False)
 
     episode_record = EpisodeBuffer()
     for j in range(ntrials_per_episode):
@@ -80,7 +80,7 @@ for i in range(episodes):
         r_sum = 0
         while not done or t > max_trial_length:
             # get action
-            a, h = Q.sample_action(torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0), 
+            a, (q,h) = Q.sample_action(torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0), 
                                     h.to(device), epsilon)
 
             # take action

@@ -23,11 +23,11 @@ class DRQN(nn.Module):
     def sample_action(self, xin, hidden, epsilon):
         output = self.forward(xin, hidden)
         if random.random() < epsilon:
-            return random.randint(0,1), output[1]
+            return random.randint(0,1), output
         else:
-            return output[0].argmax().item(), output[1]
+            return output[0].argmax().item(), output
     
-    def init_hidden_state(self, batch_size, training=None):
+    def init_hidden_state(self, batch_size=None, training=None):
         assert training is not None, "training step parameter should be determined"
         if training is True:
             return torch.zeros([1, batch_size, self.hidden_size])
@@ -40,3 +40,6 @@ class DRQN(nn.Module):
     
     def save_weights_to_path(self, path, weights=None):
         torch.save(self.state_dict() if weights is None else weights, path)
+
+    def load_weights_from_path(self, path):
+        self.load_state_dict(torch.load(path))
