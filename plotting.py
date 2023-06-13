@@ -9,7 +9,7 @@ plt.rcParams['font.family'] = 'Helvetica'
 mpl.rcParams['axes.spines.right'] = False
 mpl.rcParams['axes.spines.top'] = False
 
-def plot_results(all_trials, ntrials_per_episode, outfile):
+def plot_results(all_trials, ntrials_per_episode, outfile=None):
     fontsize = 8
     running_mean = lambda ys, n: np.convolve(ys, np.ones(n)/n, mode='valid')
     trials = np.vstack(all_trials)
@@ -31,4 +31,6 @@ def plot_results(all_trials, ntrials_per_episode, outfile):
         plt.xticks(fontsize=fontsize)
         plt.yticks(fontsize=fontsize)
     plt.tight_layout()
-    plt.savefig(outfile)
+    if outfile:
+        plt.savefig(outfile)
+        plt.close()

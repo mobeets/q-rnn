@@ -4,8 +4,9 @@ from tasks.trial import get_itis
 from numpy.random import default_rng
 
 class Roitman2002(gym.Env):
-    def __init__(self, reward_amounts, p_coh=0.6,
+    def __init__(self, reward_amounts, p_coh=0.6, fixed_response_time=None,
                  iti_min=0, iti_p=0.5, iti_max=0, iti_dist='geometric'):
+    
         self.reward_amounts = reward_amounts # Correct, Incorrect, Abort, Wait
         assert len(self.reward_amounts) == 4
         self.observation_space = spaces.Discrete(3, start=-1) # Left, Null, Right
@@ -13,6 +14,7 @@ class Roitman2002(gym.Env):
         self.p_coh = p_coh # should be in [0.5, 1.0]
         if self.p_coh < 0.5 or self.p_coh > 1.0:
             raise Exception("p_coh must be in [0.5, 1.0]")
+        self.fixed_response_time = fixed_response_time
         self.iti_min = iti_min
         self.iti_max = iti_max # n.b. only used if iti_dist == 'uniform'
         self.iti_p = iti_p
@@ -49,15 +51,26 @@ class Roitman2002(gym.Env):
         return observation, None
     
     def step(self, action):
-        done = action != 2 # trial ends when decision is made
-        if action == 2: # wait
-            reward = self.reward_amounts[-1]
-        elif self.t < self.iti: # action prior to stim onset aborts trial
-            reward = self.reward_amounts[2]
-        elif (2*action-1) == self.state: # correct decision
-            reward = self.reward_amounts[0]
-        else: # incorrect decision
-            reward = self.reward_amounts[1]
+        if self.fixed_response_time is None:
+            done = action != 2 # trial ends when decision is made
+    
+            if action == 2: # wait
+                reward = self.reward_amounts[-1]
+            elif self.t < self.iti: # action prior to stim onset aborts trial
+                reward = self.reward_amounts[2]
+            elif (2*action-1) == self.state: # correct decision
+                reward = self.reward_amounts[0]
+            else: # incorrect decision
+                reward = self.reward_amounts[1]
+        else:
+            done = self.t - self.iti >= self.fixed_response_time
+
+            if done:
+                if (2*action-1) == self.state: # correct decision
+                    reward = self.reward_amounts[0]
+                else: # incorrect decision
+                    reward = self.reward_amounts[1]
+        
         if not done:
             observation = self._get_obs()
         else:
