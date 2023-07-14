@@ -1,7 +1,10 @@
 # source: https://github.com/keep9oing/DRQN-Pytorch-CartPole-v1
 import os.path
-import numpy as np
 import datetime
+import json
+from types import ModuleType
+
+import numpy as np
 import torch
 import torch.optim as optim
 device = torch.device('cpu')
@@ -12,7 +15,7 @@ from replay import EpisodeMemory, EpisodeBuffer
 from plotting import plot_results
 from tasks.roitman2002 import Roitman2002
 
-# Set parameters
+# parameters
 learning_rate = 1e-3 # initial learning rate
 buffer_len = int(100000)
 min_epi_num = 8 # episodes to run before training the Q network
@@ -34,9 +37,20 @@ max_epi_len = 600 # max number of time steps used in sample episode
 max_epi_num = 100 # max number of episodes remembered
 gamma = 0.9 # reward discount factor
 
-# create model
+# other params
+reward_amounts = [20, -400, -400, -1]
 include_prev_reward = True
 include_prev_action = True
+
+def save_params(run_name, hidden_size, filenames):
+    params = dict((x,y) for x,y in globals().items() if not x.startswith('__') and not callable(y) and not isinstance(y, ModuleType))
+    params.pop('device')
+    params['time'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    params['run_name'] = run_name
+    params['hidden_size'] = hidden_size
+    params['filenames'] = filenames
+    with open(filenames['paramsfile'], 'w') as f:
+        json.dump(params, f)
 
 def save_results(all_trials, outfile):
     np.save(outfile, all_trials)
@@ -46,8 +60,22 @@ def train_model(run_name=None, hidden_size=4):
         run_name = str(datetime.datetime.now()).replace(' ', '-').replace('.', '-').replace(':', '-')
 
     # Set gym environment
-    reward_amounts = [20, -400, -400, -1]
     env = Roitman2002(reward_amounts=reward_amounts)
+
+    # prepare to save
+    save_dir = 'data/models'
+    weightsfile_initial = os.path.join(save_dir, 'weights_initial_h{}_{}.pth'.format(hidden_size, run_name))
+    weightsfile_final = os.path.join(save_dir, 'weights_final_h{}_{}.pth'.format(hidden_size, run_name))
+    scoresfile = os.path.join(save_dir, 'results_h{}_{}.npy'.format(hidden_size, run_name))
+    plotfile = os.path.join(save_dir, 'results_h{}_{}.pdf'.format(hidden_size, run_name))
+    paramsfile = os.path.join(save_dir, 'results_h{}_{}.json'.format(hidden_size, run_name))
+    filenames = {'weightsfile_initial': weightsfile_initial,
+        'weightsfile_final': weightsfile_final,
+        'scoresfile': scoresfile,
+        'plotfile': plotfile,
+        'paramsfile': paramsfile
+    }
+    save_params(run_name, hidden_size, filenames)
 
     Q = DRQN(input_size=1 + include_prev_reward + include_prev_action*env.action_space.n, # stim and reward
                 hidden_size=hidden_size,
@@ -56,13 +84,7 @@ def train_model(run_name=None, hidden_size=4):
                         hidden_size=Q.hidden_size,
                         output_size=Q.output_size).to(device)
     Q_target.load_state_dict(Q.state_dict())
-
-    # prepare to save
-    save_dir = 'data/models'
-    weightsfile_initial = os.path.join(save_dir, 'weights_initial_h{}_{}.pth'.format(hidden_size, run_name))
-    weightsfile_final = os.path.join(save_dir, 'weights_final_h{}_{}.pth'.format(hidden_size, run_name))
-    scoresfile = os.path.join(save_dir, 'results_h{}_{}.npy'.format(hidden_size, run_name))
-    plotfile = os.path.join(save_dir, 'results_h{}_{}.pdf'.format(hidden_size, run_name))
+    Q.save_weights_to_path(filenames['weightsfile_initial'], Q.initial_weights)
 
     # set optimizer
     optimizer = optim.Adam(Q.parameters(), lr=learning_rate)
@@ -138,17 +160,15 @@ def train_model(run_name=None, hidden_size=4):
                 ctrials[:,0].mean(), ctrials[:,-2].sum(), ctrials[:,-1].sum(), len(ctrials), epsilon*100))
             trials = []
             Q.checkpoint_weights()
-            Q.save_weights_to_path(weightsfile_initial, Q.initial_weights)
-            Q.save_weights_to_path(weightsfile_final, Q.saved_weights)
-            save_results(all_trials, scoresfile)
-            # plot_results(all_trials, ntrials_per_episode, plotfile)
+            Q.save_weights_to_path(filenames['weightsfile_final'], Q.saved_weights)
+            save_results(all_trials, filenames['scoresfile'])
+            # plot_results(all_trials, ntrials_per_episode, filenames['plotfile'])
     env.close()
 
     Q.checkpoint_weights()
-    Q.save_weights_to_path(weightsfile_initial, Q.initial_weights)
-    Q.save_weights_to_path(weightsfile_final, Q.saved_weights)
-    save_results(all_trials, scoresfile)
-    # plot_results(all_trials, ntrials_per_episode, plotfile)
+    Q.save_weights_to_path(filenames['weightsfile_final'], Q.saved_weights)
+    save_results(all_trials, filenames['scoresfile'])
+    # plot_results(all_trials, ntrials_per_episode, filenames['plotfile'])
 
 def call_main_inner(**args):
     run_index = args.pop('run_index')
@@ -157,22 +177,22 @@ def call_main_inner(**args):
     train_model(run_name, hidden_size=args['hidden_size'])
 
 if __name__ == '__main__':
-    # train_model('tmp', hidden_size=4)
+    train_model('tmp', hidden_size=4)
 
-    import multiprocessing
-    from multiprocessing.pool import ThreadPool
+    # import multiprocessing
+    # from multiprocessing.pool import ThreadPool
 
-    # Runs repeats in parallel
-    CPU_COUNT = multiprocessing.cpu_count()
-    print("Found {} cpus".format(CPU_COUNT))
-    pool = ThreadPool(CPU_COUNT)
+    # # Runs repeats in parallel
+    # CPU_COUNT = multiprocessing.cpu_count()
+    # print("Found {} cpus".format(CPU_COUNT))
+    # pool = ThreadPool(CPU_COUNT)
 
-    for h in [4,8]:
-        for i in range(20):
-            targs = {}
-            targs['hidden_size'] = h
-            targs['run_index'] = i
-            pool.apply_async(call_main_inner, kwds=targs)
+    # for h in [4,8]:
+    #     for i in range(20):
+    #         targs = {}
+    #         targs['hidden_size'] = h
+    #         targs['run_index'] = i
+    #         pool.apply_async(call_main_inner, kwds=targs)
 
-    pool.close()
-    pool.join()
+    # pool.close()
+    # pool.join()

@@ -16,11 +16,11 @@ class Trial:
     def __init__(self, state, iti, index_in_episode=None):
         self.state = state
         self.iti = iti
-        self.X = []
-        self.A = []
-        self.Q = []
-        self.Z = []
-        self.R = []
+        self.X = [] # inputs
+        self.A = [] # actions
+        self.Q = [] # state-action values
+        self.Z = [] # rnn activations
+        self.R = [] # rewards
         self.trial_length = 0
         self.index_in_episode = index_in_episode
         self.tag = None

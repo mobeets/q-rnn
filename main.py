@@ -6,6 +6,7 @@ import numpy as np
 import torch
 from model import DRQN
 from tasks.roitman2002 import Roitman2002
+from tasks.beron2022 import Beron2022_TrialLevel
 from train import probe_model, probe_model_off_policy
 from analyze import add_beliefs
 from analysis.correlations import analyze
