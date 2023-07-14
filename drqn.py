@@ -14,14 +14,16 @@ from train import train
 from replay import EpisodeMemory, EpisodeBuffer
 from plotting import plot_results
 from tasks.roitman2002 import Roitman2002
+from tasks.beron2022 import Beron2022_TrialLevel
 
 # parameters
 learning_rate = 1e-3 # initial learning rate
 buffer_len = int(100000)
 min_epi_num = 8 # episodes to run before training the Q network
 episodes = 1500 # total number of episodes to train on
-ntrials_per_episode = 20 # number of trials comprising an episode
-print_per_iter = 25 # episodes between printing status
+# ntrials_per_episode = 20 # number of trials comprising an episode
+ntrials_per_episode = 800 # number of trials comprising an episode
+print_per_iter = 1 # episodes between printing status
 target_update_period = 4 # time steps between target network updates
 tau = 1e-2 # exponential smoothing parameter for target network update
 max_trial_length = 1000 # max number of time steps in episode
@@ -38,14 +40,14 @@ max_epi_num = 100 # max number of episodes remembered
 gamma = 0.9 # reward discount factor
 
 # other params
-reward_amounts = [20, -400, -400, -1]
 include_prev_reward = True
 include_prev_action = True
 
-def save_params(run_name, hidden_size, filenames):
+def save_params(environment, run_name, hidden_size, filenames):
     params = dict((x,y) for x,y in globals().items() if not x.startswith('__') and not callable(y) and not isinstance(y, ModuleType))
     params.pop('device')
     params['time'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    params['environment'] = environment
     params['run_name'] = run_name
     params['hidden_size'] = hidden_size
     params['filenames'] = filenames
@@ -55,12 +57,17 @@ def save_params(run_name, hidden_size, filenames):
 def save_results(all_trials, outfile):
     np.save(outfile, all_trials)
 
-def train_model(run_name=None, hidden_size=4):
+def train_model(environment, run_name=None, hidden_size=4):
     if run_name is None:
         run_name = str(datetime.datetime.now()).replace(' ', '-').replace('.', '-').replace(':', '-')
 
     # Set gym environment
-    env = Roitman2002(reward_amounts=reward_amounts)
+    if environment == 'roitman2002':
+        env_params = {'reward_amounts': [20, -400, -400, -1]}
+        env = Roitman2002(**env_params)
+    elif environment == 'beron2022':
+        env_params = {'p_rew_max': 0.9, 'ntrials': 1}
+        env = Beron2022_TrialLevel(**env_params)
 
     # prepare to save
     save_dir = 'data/models'
@@ -75,7 +82,7 @@ def train_model(run_name=None, hidden_size=4):
         'plotfile': plotfile,
         'paramsfile': paramsfile
     }
-    save_params(run_name, hidden_size, filenames)
+    save_params(environment, run_name, hidden_size, filenames)
 
     Q = DRQN(input_size=1 + include_prev_reward + include_prev_action*env.action_space.n, # stim and reward
                 hidden_size=hidden_size,
@@ -146,7 +153,10 @@ def train_model(run_name=None, hidden_size=4):
                     
                 t += 1
                 if done:
-                    trials.append([env.t - env.iti, env.state, a, r_sum, env.t < env.iti, r > 0])
+                    if environment == 'roitman2002':
+                        trials.append([env.t - env.iti, env.state, a, r_sum, env.t < env.iti, r > 0])
+                    elif environment == 'beron2022':
+                        trials.append([info['state'], a, r])
                     break
         episode_memory.put(episode_record)
         epsilon = max(eps_end, epsilon * eps_decay) # linear annealing on epsilon
@@ -155,9 +165,9 @@ def train_model(run_name=None, hidden_size=4):
             all_trials.extend(trials)
             ctrials = np.vstack(trials)
 
-            print("nepisode: {}, nbuffer: {}, avgtriallength: {}, naborts: {}, nrewards: {}, nepisodes: {}, 100*eps: {:.1f}%".format(
+            print("nepisode: {}, nbuffer: {}, avgtriallength: {:0.2f}, avgaborts: {:0.2f}, avgrewards: {:0.2f}, nepisodes: {}, 100*eps: {:.1f}%".format(
                 i, len(episode_memory), 
-                ctrials[:,0].mean(), ctrials[:,-2].sum(), ctrials[:,-1].sum(), len(ctrials), epsilon*100))
+                ctrials[:,0].mean(), ctrials[:,-2].mean(), ctrials[:,-1].mean(), len(ctrials), epsilon*100))
             trials = []
             Q.checkpoint_weights()
             Q.save_weights_to_path(filenames['weightsfile_final'], Q.saved_weights)
@@ -174,10 +184,12 @@ def call_main_inner(**args):
     run_index = args.pop('run_index')
     run_name = 'h{}_v{}'.format(args['hidden_size'], run_index)
     print('======= RUN {} ========'.format(run_name))
-    train_model(run_name, hidden_size=args['hidden_size'])
+    train_model(environment, run_name, hidden_size=args['hidden_size'])
 
 if __name__ == '__main__':
-    train_model('tmp', hidden_size=4)
+    environment = 'beron2022'
+    run_name = 'beron_v3_p09'
+    train_model(environment, run_name, hidden_size=3)
 
     # import multiprocessing
     # from multiprocessing.pool import ThreadPool

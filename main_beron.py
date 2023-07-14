@@ -23,7 +23,7 @@ mpl.rcParams['axes.spines.top'] = False
 
 #%% random agent
 
-env = Beron2022_TrialLevel(ntrials=150)
+env = Beron2022_TrialLevel(ntrials=200)
 
 seed = 555
 last_obs = env.reset(seed=seed)[0]
@@ -44,4 +44,4 @@ plt.scatter(xs, trials[:,1], s=1 + 3*trials[:,2])
 plt.yticks(ticks=[0,1], labels=['left', 'right'])
 plt.xlabel('Trial')
 
-# %%
+#%%
