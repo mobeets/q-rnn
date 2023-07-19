@@ -59,64 +59,78 @@ def train(q_net=None, target_q_net=None, episode_memory=None,
     loss.backward()
     optimizer.step()
 
-def probe_model(model, env, nepisodes, ntrials_per_episode, epsilon=0):
+def probe_model(model, env, nepisodes, ntrials_per_episode, epsilon=0, include_prev_reward=True, include_prev_action=True):
     trials = []
     with torch.no_grad():
         for i in range(nepisodes):
             h = model.init_hidden_state(training=False)
             r = 0
+            a_prev = np.zeros(env.action_space.n)
 
             for j in range(ntrials_per_episode):
                 obs_next = env.reset()[0]
                 done = False
                 
-                trial = Trial(env.state, env.iti, index_in_episode=j)
+                if hasattr(env, 'iti'):
+                    trial = Trial(env.state, env.iti, index_in_episode=j)
+                else:
+                    trial = Trial(state=None, index_in_episode=j)
                 while not done:
+                    obs = obs_next
+                    if include_prev_reward:
+                        obs = np.array([obs, r]) # add previous reward
+                    if include_prev_action:
+                        obs = np.hstack([obs, a_prev]) # add previous action
+                    
                     # get action
-                    obs = np.array([obs_next, r]) # add previous reward
                     a, (q, h) = model.sample_action(torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0), 
                                             h.to(device), epsilon=epsilon)
+                    a_prev = np.zeros(env.action_space.n); a_prev[a] = 1.
 
                     # take action
                     obs_next, r, done, truncated, info = env.step(a)
 
                     # save
-                    trial.update(obs, a, r, h.numpy(), q.numpy())
+                    trial.update(obs, a, r, h.numpy(), q.numpy(), info.get('state', None))
                 trials.append(trial)
     return trials
 
-def probe_model_off_policy(model, policymodel, env, nepisodes, ntrials_per_episode, epsilon=0):
+def probe_model_off_policy(model, policymodel, env, nepisodes, ntrials_per_episode, epsilon=0, include_prev_reward=True, include_prev_action=True):
     trials = []
     with torch.no_grad():
         for i in range(nepisodes):
             h = model.init_hidden_state(training=False)
             hp = policymodel.init_hidden_state(training=False)
             r = 0
+            a_prev = np.zeros(env.action_space.n)
 
             for j in range(ntrials_per_episode):
                 obs_next = env.reset()[0]
                 done = False
                 
-                trial = Trial(env.state, env.iti, index_in_episode=j)
+                if hasattr(env, 'iti'):
+                    trial = Trial(env.state, env.iti, index_in_episode=j)
+                else:
+                    trial = Trial(state=None, index_in_episode=j)
                 while not done:
+                    obs = obs_next
+                    if include_prev_reward:
+                        obs = np.array([obs, r]) # add previous reward
+                    if include_prev_action:
+                        obs = np.hstack([obs, a_prev]) # add previous action
+                    
                     # get action
-                    obs = np.array([obs_next, r]) # add previous reward
+                    # obs = np.array([obs_next, r]) # add previous reward
+                    # cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
                     cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
                     _, (q, h) = model.sample_action(cobs, h.to(device), epsilon=epsilon)
                     a, (_, hp) = policymodel.sample_action(cobs, hp.to(device), epsilon=epsilon)
-                    
-                    # a = 2
-                    # if obs[0] == 0:
-                    #     z = 0
-                    # else:
-                    #     z += obs[0]
-                    #     if np.abs(z) > 15:
-                    #         a = (z > 15)
+                    a_prev = np.zeros(env.action_space.n); a_prev[a] = 1.
 
                     # take action
                     obs_next, r, done, truncated, info = env.step(a)
 
                     # save
-                    trial.update(obs, a, r, h.numpy(), q.numpy())
+                    trial.update(obs, a, r, h.numpy(), q.numpy(), info.get('state', None))
                 trials.append(trial)
     return trials

@@ -22,6 +22,25 @@ plt.rcParams['font.family'] = 'Helvetica'
 mpl.rcParams['axes.spines.right'] = False
 mpl.rcParams['axes.spines.top'] = False
 
+#%% load model
+
+nepisodes = 1; ntrials_per_episode = 1000
+seed = 666
+infile = 'data/models/weights_final_h3_beron_v3_p09.pth'
+env_params = {'p_rew_max': 0.9, 'ntrials': 1}
+env = Beron2022_TrialLevel(**env_params)
+hidden_size = 3
+policymodel = DRQN(input_size=4, # empty + prev reward + prev actions
+                hidden_size=hidden_size,
+                output_size=env.action_space.n).to(device)
+policymodel.load_weights_from_path(infile)
+model = policymodel
+
+# probe model
+env.reset(seed=seed)
+trials = probe_model(model, env, nepisodes=nepisodes, ntrials_per_episode=ntrials_per_episode)
+pol_avg_rew = np.hstack([trial.R for trial in trials]).mean()
+
 #%% compare belief-like-ness of models, before and after training
 
 seed = 666

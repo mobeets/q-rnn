@@ -66,7 +66,7 @@ def train_model(environment, run_name=None, hidden_size=4):
         env_params = {'reward_amounts': [20, -400, -400, -1]}
         env = Roitman2002(**env_params)
     elif environment == 'beron2022':
-        env_params = {'p_rew_max': 0.9, 'ntrials': 1}
+        env_params = {'p_rew_max': 0.8, 'ntrials': 1}
         env = Beron2022_TrialLevel(**env_params)
 
     # prepare to save
@@ -186,25 +186,26 @@ def call_main_inner(**args):
     print('======= RUN {} ========'.format(run_name))
     train_model(environment, run_name, hidden_size=args['hidden_size'])
 
+def parallelize():
+    import multiprocessing
+    from multiprocessing.pool import ThreadPool
+
+    # Runs repeats in parallel
+    CPU_COUNT = multiprocessing.cpu_count()
+    print("Found {} cpus".format(CPU_COUNT))
+    pool = ThreadPool(CPU_COUNT)
+
+    for h in [4,8]:
+        for i in range(20):
+            targs = {}
+            targs['hidden_size'] = h
+            targs['run_index'] = i
+            pool.apply_async(call_main_inner, kwds=targs)
+
+    pool.close()
+    pool.join()
+
 if __name__ == '__main__':
     environment = 'beron2022'
-    run_name = 'beron_v3_p09'
+    run_name = 'beron_v3_p08'
     train_model(environment, run_name, hidden_size=3)
-
-    # import multiprocessing
-    # from multiprocessing.pool import ThreadPool
-
-    # # Runs repeats in parallel
-    # CPU_COUNT = multiprocessing.cpu_count()
-    # print("Found {} cpus".format(CPU_COUNT))
-    # pool = ThreadPool(CPU_COUNT)
-
-    # for h in [4,8]:
-    #     for i in range(20):
-    #         targs = {}
-    #         targs['hidden_size'] = h
-    #         targs['run_index'] = i
-    #         pool.apply_async(call_main_inner, kwds=targs)
-
-    # pool.close()
-    # pool.join()

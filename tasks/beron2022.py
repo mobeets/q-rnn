@@ -4,7 +4,7 @@ import numpy as np
 from numpy.random import default_rng
 
 class Beron2022_TrialLevel(gym.Env):
-    def __init__(self, p_rew_max=0.7, p_switch=0.98, ntrials=1):
+    def __init__(self, p_rew_max=0.7, p_switch=0.02, ntrials=1):
         self.observation_space = spaces.Discrete(1) # 0 every time
         self.action_space = spaces.Discrete(2) # left or right port
         self.p_rew_max = p_rew_max # max prob of reward; should be in [0.5, 1.0]
@@ -24,11 +24,11 @@ class Beron2022_TrialLevel(gym.Env):
     
     def _update_state(self):
         """
-        flips state with probability 1-self.p_switch
+        flips state with probability self.p_switch
         """
         if self.state is None:
             self.state = int(self.rng_state.random() < 0.5)
-        do_switch_state = self.rng_state.random() > self.p_switch
+        do_switch_state = self.rng_state.random() < self.p_switch
         if do_switch_state:
             self.state = int(self.state == 0)
 

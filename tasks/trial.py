@@ -13,9 +13,10 @@ def get_itis(self, ntrials=None):
     return self.iti_min + itis
 
 class Trial:
-    def __init__(self, state, iti, index_in_episode=None):
+    def __init__(self, state, iti=None, index_in_episode=None):
         self.state = state
         self.iti = iti
+        self.S = [] # states (if applicable)
         self.X = [] # inputs
         self.A = [] # actions
         self.Q = [] # state-action values
@@ -25,19 +26,21 @@ class Trial:
         self.index_in_episode = index_in_episode
         self.tag = None
 
-    def update(self, o, a, r, h, q):
+    def update(self, o, a, r, h, q, s=None):
         if len(self.X) == 0:
             self.X = o[None,:]
             self.A = np.array([a])
             self.R = np.array([r])
             self.Z = h.flatten()[None,:]
             self.Q = q.flatten()[None,:]
+            self.S = np.array([s])
         else:
             self.X = np.vstack([self.X, o])
             self.A = np.hstack([self.A, [a]])
             self.Z = np.vstack([self.Z, h.flatten()])
             self.Q = np.vstack([self.Q, q.flatten()])
             self.R = np.hstack([self.R, [r]])
+            self.S = np.hstack([self.S, [s]])
         self.trial_length = len(self.X)
 
     def __getitem__(self, key):
