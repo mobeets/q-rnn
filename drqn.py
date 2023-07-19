@@ -12,7 +12,6 @@ device = torch.device('cpu')
 from model import DRQN
 from train import train
 from replay import EpisodeMemory, EpisodeBuffer
-from plotting import plot_results
 from tasks.roitman2002 import Roitman2002
 from tasks.beron2022 import Beron2022_TrialLevel
 
@@ -74,12 +73,11 @@ def train_model(environment, run_name=None, hidden_size=4):
     weightsfile_initial = os.path.join(save_dir, 'weights_initial_h{}_{}.pth'.format(hidden_size, run_name))
     weightsfile_final = os.path.join(save_dir, 'weights_final_h{}_{}.pth'.format(hidden_size, run_name))
     scoresfile = os.path.join(save_dir, 'results_h{}_{}.npy'.format(hidden_size, run_name))
-    plotfile = os.path.join(save_dir, 'results_h{}_{}.pdf'.format(hidden_size, run_name))
     paramsfile = os.path.join(save_dir, 'results_h{}_{}.json'.format(hidden_size, run_name))
-    filenames = {'weightsfile_initial': weightsfile_initial,
+    filenames = {
+        'weightsfile_initial': weightsfile_initial,
         'weightsfile_final': weightsfile_final,
         'scoresfile': scoresfile,
-        'plotfile': plotfile,
         'paramsfile': paramsfile
     }
     save_params(environment, run_name, hidden_size, filenames)
@@ -106,10 +104,14 @@ def train_model(environment, run_name=None, hidden_size=4):
     # train
     trials = []
     all_trials = []
+    best_score = -np.inf
     for i in range(episodes):
         r = 0
         a_prev = np.zeros(env.action_space.n)
         h = Q.init_hidden_state(training=False)
+        cur_loss = 0
+        cur_score = 0
+        t_score = 0
 
         episode_record = EpisodeBuffer()
         for j in range(ntrials_per_episode):
@@ -121,7 +123,7 @@ def train_model(environment, run_name=None, hidden_size=4):
             done = False
             
             t = 0
-            r_sum = 0
+            r_sum = 0            
             while not done or t > max_trial_length:
                 # get action
                 a, (q,h) = Q.sample_action(torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0), 
@@ -142,7 +144,7 @@ def train_model(environment, run_name=None, hidden_size=4):
                 r_sum += r
 
                 if len(episode_memory) >= min_epi_num:
-                    train(Q, Q_target, episode_memory, device, 
+                    cur_loss += train(Q, Q_target, episode_memory, device, 
                             optimizer=optimizer,
                             batch_size=batch_size,
                             gamma=gamma)
@@ -158,35 +160,32 @@ def train_model(environment, run_name=None, hidden_size=4):
                     elif environment == 'beron2022':
                         trials.append([info['state'], a, r])
                     break
+            cur_score += r_sum
+            t_score += t
         episode_memory.put(episode_record)
         epsilon = max(eps_end, epsilon * eps_decay) # linear annealing on epsilon
 
-        if i % print_per_iter == 0 and i > 0:
-            all_trials.extend(trials)
-            ctrials = np.vstack(trials)
-
-            print("nepisode: {}, nbuffer: {}, avgtriallength: {:0.2f}, avgaborts: {:0.2f}, avgrewards: {:0.2f}, nepisodes: {}, 100*eps: {:.1f}%".format(
-                i, len(episode_memory), 
-                ctrials[:,0].mean(), ctrials[:,-2].mean(), ctrials[:,-1].mean(), len(ctrials), epsilon*100))
-            trials = []
+        cur_avg_score = cur_score/t_score
+        if cur_avg_score > best_score:
+            best_score = cur_avg_score
             Q.checkpoint_weights()
             Q.save_weights_to_path(filenames['weightsfile_final'], Q.saved_weights)
+
+        if i % print_per_iter == 0 and i > 0:
+            print("episode {} | loss: {:0.4f}, score: {:0.3f}, ε={:0.1f}%".format(i, cur_loss, cur_avg_score, epsilon*100))
+            all_trials.extend(trials)
+            trials = []
             save_results(all_trials, filenames['scoresfile'])
-            # plot_results(all_trials, ntrials_per_episode, filenames['plotfile'])
     env.close()
-
-    Q.checkpoint_weights()
-    Q.save_weights_to_path(filenames['weightsfile_final'], Q.saved_weights)
     save_results(all_trials, filenames['scoresfile'])
-    # plot_results(all_trials, ntrials_per_episode, filenames['plotfile'])
 
-def call_main_inner(**args):
+def train_model_outer(**args):
     run_index = args.pop('run_index')
     run_name = 'h{}_v{}'.format(args['hidden_size'], run_index)
     print('======= RUN {} ========'.format(run_name))
     train_model(environment, run_name, hidden_size=args['hidden_size'])
 
-def parallelize():
+def parallel_train():
     import multiprocessing
     from multiprocessing.pool import ThreadPool
 
@@ -200,12 +199,12 @@ def parallelize():
             targs = {}
             targs['hidden_size'] = h
             targs['run_index'] = i
-            pool.apply_async(call_main_inner, kwds=targs)
+            pool.apply_async(train_model_outer, kwds=targs)
 
     pool.close()
     pool.join()
 
 if __name__ == '__main__':
     environment = 'beron2022'
-    run_name = 'beron_v3_p08'
+    run_name = 'beron_v4_p08'
     train_model(environment, run_name, hidden_size=3)

@@ -58,6 +58,8 @@ def train(q_net=None, target_q_net=None, episode_memory=None,
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
+    
+    return loss/batch_size
 
 def probe_model(model, env, nepisodes, ntrials_per_episode, epsilon=0, include_prev_reward=True, include_prev_action=True):
     trials = []

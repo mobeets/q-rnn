@@ -28,9 +28,9 @@ class DRQN(nn.Module):
 
     def sample_action(self, xin, hidden, epsilon):
         output = self.forward(xin, hidden)
-        if self.rng.random() < epsilon:
-            return self.rng.randint(0,1), output
-        else:
+        if self.rng.random() < epsilon: # choose random action
+            return int(self.rng.random() < 0.5), output
+        else: # choose best action
             return output[0].argmax().item(), output
     
     def init_hidden_state(self, batch_size=None, training=None):
