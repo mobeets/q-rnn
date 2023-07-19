@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from tasks.trial import Trial
 
 device = torch.device('cpu')
+tol = np.finfo('float').min
 
 def train(q_net=None, target_q_net=None, episode_memory=None,
           device=None, 
@@ -61,7 +62,7 @@ def train(q_net=None, target_q_net=None, episode_memory=None,
     
     return loss/batch_size
 
-def probe_model(model, env, nepisodes, ntrials_per_episode, epsilon=0, include_prev_reward=True, include_prev_action=True):
+def probe_model(model, env, nepisodes, ntrials_per_episode, epsilon=0, tau=tol, include_prev_reward=True, include_prev_action=True):
     trials = []
     with torch.no_grad():
         for i in range(nepisodes):
@@ -86,7 +87,7 @@ def probe_model(model, env, nepisodes, ntrials_per_episode, epsilon=0, include_p
                     
                     # get action
                     a, (q, h) = model.sample_action(torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0), 
-                                            h.to(device), epsilon=epsilon)
+                                            h.to(device), epsilon=epsilon, tau=tau)
                     a_prev = np.zeros(env.action_space.n); a_prev[a] = 1.
 
                     # take action
@@ -97,7 +98,7 @@ def probe_model(model, env, nepisodes, ntrials_per_episode, epsilon=0, include_p
                 trials.append(trial)
     return trials
 
-def probe_model_off_policy(model, policymodel, env, nepisodes, ntrials_per_episode, epsilon=0, include_prev_reward=True, include_prev_action=True):
+def probe_model_off_policy(model, policymodel, env, nepisodes, ntrials_per_episode, epsilon=0, tau=tol, include_prev_reward=True, include_prev_action=True):
     trials = []
     with torch.no_grad():
         for i in range(nepisodes):
@@ -125,8 +126,8 @@ def probe_model_off_policy(model, policymodel, env, nepisodes, ntrials_per_episo
                     # obs = np.array([obs_next, r]) # add previous reward
                     # cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
                     cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
-                    _, (q, h) = model.sample_action(cobs, h.to(device), epsilon=epsilon)
-                    a, (_, hp) = policymodel.sample_action(cobs, hp.to(device), epsilon=epsilon)
+                    _, (q, h) = model.sample_action(cobs, h.to(device), epsilon=epsilon, tau=tau)
+                    a, (_, hp) = policymodel.sample_action(cobs, hp.to(device), epsilon=epsilon, tau=tau)
                     a_prev = np.zeros(env.action_space.n); a_prev[a] = 1.
 
                     # take action

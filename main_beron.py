@@ -23,8 +23,7 @@ mpl.rcParams['axes.spines.top'] = False
 
 #%% example random agent
 
-env = Beron2022_TrialLevel(ntrials=200)
-
+env = Beron2022_TrialLevel()
 seed = 555
 last_obs = env.reset(seed=seed)[0]
 done = False
@@ -40,7 +39,7 @@ trials = np.vstack(trials)
 
 nepisodes = 1; ntrials_per_episode = 1000
 infile = 'data/models/weights_final_h3_beron_v3_p08.pth'
-env_params = {'p_rew_max': 0.8, 'ntrials': 1}
+env_params = {'p_rew_max': 0.8}
 env = Beron2022_TrialLevel(**env_params)
 hidden_size = 3
 
@@ -71,6 +70,7 @@ for useRandomModel in [True, False]:
 
         # run model on trials
         trials = probe_model_off_policy(model, policymodel, env, nepisodes=nepisodes, ntrials_per_episode=ntrials_per_episode)
+        print(useRandomModel, name, np.hstack([trial.R for trial in trials]).mean())
 
         # add beliefs
         add_beliefs_beron2022(trials, env.p_rew_max, env.p_switch)
@@ -153,6 +153,55 @@ for showHighPort in [True, False]:
         plt.ylabel('P(switch)')
     plt.ylim([-0.02, 1.02])
 plt.tight_layout()
+
+#%% characterize switching probs given 'words', as in Fig. 2D of Beron et al. (2022)
+
+def toSymbol(a,r):
+    if a == 0 and r == 0:
+        return 'l'
+    elif a == 0 and r == 1:
+        return 'L'
+    elif a == 1 and r == 0:
+        return 'r'
+    elif a == 1 and r == 1:
+        return 'R'
+    else:
+        assert False
+
+def toWord(seq):
+    if seq[0].lower() == 'l':
+        return seq.replace('l', 'a').replace('L', 'A').replace('r', 'b').replace('R', 'B')
+    elif seq[0].lower() == 'r':
+        return seq.replace('l', 'b').replace('L', 'B').replace('r', 'a').replace('R', 'A')
+    else:
+        assert False
+
+import time
+t = time.time()
+trials = probe_model(model, env, nepisodes=1, ntrials_per_episode=50000, epsilon=0.01)
+print(time.time()-t)
+
+symbs = [toSymbol(trial.A[0], trial.R[0]) for trial in trials]
+switches = [(toWord(''.join(symbs[i:(i+3)])), trials[i+4].A[0] != trials[i+3].A[0]) for i in range(len(trials)-4)]
+
+words = [x+y+z for x in 'Aa' for y in 'AaBb' for z in 'AaBb']
+counts = {word: (0,0) for word in words}
+for (word, didSwitch) in switches:
+    if word not in counts:
+        counts[word] = (0,0)
+    c,n = counts[word]
+    counts[word] = (c + int(didSwitch), n+1)
+freqs = [(word, vals[0]/vals[1] if vals[1] > 0 else 0) for word, vals in counts.items()]
+freqs = sorted(freqs, key=lambda x: x[1])
+xs = np.arange(len(freqs))
+
+plt.figure(figsize=(8,2))
+plt.bar(xs, [y for x,y in freqs], color='k', alpha=0.5)
+plt.xticks(ticks=xs, labels=[x for x,y in freqs], rotation=90)
+plt.yticks([0,0.25,0.5,0.75,1])
+plt.xlim([-1, xs.max()+1])
+plt.xlabel('history')
+plt.ylabel('P(switch)')
 
 #%% compare beliefs and latent activity
 

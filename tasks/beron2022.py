@@ -4,17 +4,14 @@ import numpy as np
 from numpy.random import default_rng
 
 class Beron2022_TrialLevel(gym.Env):
-    def __init__(self, p_rew_max=0.7, p_switch=0.02, ntrials=1):
+    def __init__(self, p_rew_max=0.7, p_switch=0.02):
         self.observation_space = spaces.Discrete(1) # 0 every time
         self.action_space = spaces.Discrete(2) # left or right port
         self.p_rew_max = p_rew_max # max prob of reward; should be in [0.5, 1.0]
         self.p_switch = p_switch # prob. of state change each trial
         self.rng_state = default_rng()
         self.rng_reward = default_rng()
-
         self.state = None # if left (0) or right (1) port has higher reward prob
-        self.trial_count = 0
-        self.ntrials = ntrials
 
     def _get_obs(self):
         """
@@ -50,7 +47,6 @@ class Beron2022_TrialLevel(gym.Env):
         if seed is not None:
             self.rng_state = default_rng(seed)
             self.rng_reward = default_rng(seed+1)
-        self.trial_count = 0
         self._update_state()
         observation = self._get_obs()
         return observation, None
@@ -60,13 +56,7 @@ class Beron2022_TrialLevel(gym.Env):
         agent chooses a port
         """
         reward = self._sample_reward(self.state, action)
-
-        self.trial_count += 1
-        done = self.trial_count == self.ntrials
+        done = True
         info = {'state': self.state}
-        self._update_state()
-        if not done:
-            observation = self._get_obs()
-        else:
-            observation = 0
+        observation = 0
         return observation, reward, done, False, info
