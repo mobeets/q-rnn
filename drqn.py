@@ -224,5 +224,5 @@ def parallel_train():
 
 if __name__ == '__main__':
     environment = 'beron2022'
-    run_name = 'beron_v8_p08_epsilon'
+    run_name = 'beron_v9_p08_epsilon'
     train_model(environment, run_name, hidden_size=6)

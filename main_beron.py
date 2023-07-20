@@ -40,15 +40,15 @@ trials = np.vstack(trials)
 nepisodes = 1; ntrials_per_episode = 1000
 # infile = 'data/models/weights_final_h3_beron_v3_p08.pth'
 # infile = 'data/models/weights_final_h3_beron_v5_p08_softmax.pth'
-infile = 'data/models/weights_final_h3_beron_v5_p08_epsilon.pth'
+# infile = 'data/models/weights_final_h3_beron_v5_p08_epsilon.pth'
 # infile = 'data/models/weights_final_h3_beron_v6_p08_epsilon.pth'
 # infile = 'data/models/weights_final_h2_beron_v7_p08_epsilon.pth'
-# infile = 'data/models/weights_final_h6_beron_v8_p08_epsilon.pth'
+infile = 'data/models/weights_final_h6_beron_v8_p08_epsilon.pth'
 env_params = {'p_rew_max': 0.8}
 env = Beron2022_TrialLevel(**env_params)
 hidden_size = int(infile.split('_h')[1].split('_')[0])
 epsilon = 0.1; tau = None
-# tau = 0.001; epsilon = None
+# tau = 0.00001; epsilon = None
 
 model = DRQN(input_size=4, # empty + prev reward + prev actions
                 hidden_size=hidden_size,
@@ -59,7 +59,7 @@ policymodel = DRQN(input_size=4, # empty + prev reward + prev actions
                 hidden_size=hidden_size,
                 output_size=env.action_space.n).to(device)
 policymodel.load_weights_from_path(infile)
-policymodel = None # purely random policy
+# policymodel = None # purely random policy
 
 # probe model
 Trials = {}
@@ -204,7 +204,7 @@ def toWord(seq):
         assert False
 
 trials = Trials['test']
-trials = probe_model(model, env, nepisodes=50, ntrials_per_episode=1000, epsilon=0.2)
+# trials = probe_model(model, env, nepisodes=50, ntrials_per_episode=1000, epsilon=0.1)
 
 symbs = [toSymbol(trial.A[0], trial.R[0]) for trial in trials]
 switches = []
@@ -328,6 +328,8 @@ for i in range(len(switchInds)-1):
     plt.plot(zc[-1,0], zc[-1,1], 'v', markersize=5, color=color, zorder=1)
 
 #%% assess RNN responses to fixed inputs
+
+from analysis.pca import fit_pca, apply_pca
 
 ninits = 100
 niters = 100
@@ -458,41 +460,52 @@ for p_rew_max in p_rew_maxs[:1]:
         b_end = Bs[(a_prev,r_prev,0.5)][-1]
         b_ends.append(b_end)
 
-#%% choice regression
+#%% choice regression (using same code as for mice)
 
-from sklearn.linear_model import LogisticRegression
-from sklearn import preprocessing
-from sklearn.metrics import log_loss
+from analysis.decoding_beron import fit_logreg_policy, compute_logreg_probs
 
-# trials = Trials['train']
-# trials = probe_model(model, env, nepisodes=50, ntrials_per_episode=1000, epsilon=0.1)
+if True:#'rnn_features' not in vars() or 'train' not in rnn_features:
+    rnn_features = {}
+    for name in ['train', 'test']:
+        trials = probe_model(model, env, nepisodes=50, ntrials_per_episode=1000, epsilon=0.0)
+        A = np.vstack([trial.A for trial in trials])[:,0]
+        R = np.vstack([trial.R for trial in trials])[:,0]
+        rnn_features[name] = [[A,R]]
 
-A = (2*np.vstack([trial.A for trial in trials])[:,0]-1)
-R = np.vstack([trial.R for trial in trials])[:,0]
-P = 2*np.vstack([int(trial.R==trial.A) for trial in trials])[:,0]-1
-X = []; Y = []
-for i in range(6, len(A)):
-    x = np.hstack([A[i-5:i], R[i-5:i]*A[i-5:i], R[i-5:i]])
-    # x = np.hstack([A[i-5:i], P[i-5:i], R[i-5:i]])
-    y = int(A[i]==1)
-    X.append(x); Y.append(y)
-X = np.vstack(X).astype(float)
-Y = np.hstack(Y)
-print(X.shape, Y.shape)
+pm1 = lambda x: 2 * x - 1
+feature_functions = [
+    lambda cs, rs: pm1(cs),                # choices
+    lambda cs, rs: rs,                     # rewards
+    lambda cs, rs: pm1(cs) * rs,           # +1 if choice=1 and reward, 0 if no reward, -1 if choice=0 and reward
+    lambda cs, rs: -pm1(cs) * (1-rs),       # -1 if choice=1 and no reward, 1 if reward, +1 if choice=0 and no reward
+    lambda cs, rs: (cs == rs),
+    lambda cs, rs: (cs != rs),
+    lambda cs, rs: pm1((cs == rs)),
+    lambda cs, rs: np.ones(len(cs))        # overall bias term
+]
 
-scaler = preprocessing.StandardScaler().fit(X)
-clf = LogisticRegression().fit(scaler.transform(X), Y)
-Yh = clf.predict(scaler.transform(X))
-Yh_prob = clf.predict_proba(scaler.transform(X))
-print((Y == Yh).mean(), -log_loss(Y, Yh_prob))
+feature_params = {
+    'A': 5, # choice history
+    'R': 0, # reward history
+    'A*R': 5, # choice * reward history (original)
+    'A*(R-1)': 5, # -choice * reward history
+    'A==R': 0, # choice == reward history
+    'A!=R': 0, # choice != reward history
+    'B': 0 # belief history
+}
+memories = [y for x,y in feature_params.items()] + [1]
+names = ['{}(t-{})'.format(name, t) for name, ts in feature_params.items() for t in range(ts)]
 
-ws = clf.coef_[0,:].flatten()
-# ws0 = ws.copy()
+lr = fit_logreg_policy(rnn_features['train'], memories, feature_functions) # refit model with reduced histories, training set
+model_probs, lls, std_errors = compute_logreg_probs(rnn_features['test'], [lr, memories], feature_functions)
 
-xs = np.arange(len(ws))
-labels = ['{}(t-{})'.format(x,i) for x in ['A', 'A*R', 'R'] for i in range(5,0,-1)]
-plt.plot(xs, ws0, '.-')
-plt.plot(xs, ws, '.-')
-plt.plot(plt.xlim(),[0,0], 'k-', alpha=0.5, linewidth=1, zorder=-2)
-plt.xticks(ticks=xs, labels=labels, rotation=90)
+plt.figure(figsize=(3,2))
+plt.plot(lr.coef_[0,:-1], '.')
+for i, (w, se) in enumerate(zip(lr.coef_[0,:-1], std_errors[:-1])):
+    plt.plot([i,i], [w-se, w+se], 'k-', alpha=1.0, linewidth=1, zorder=-1)
+plt.plot(plt.xlim(), [0, 0], 'k-', alpha=0.3, linewidth=1, zorder=-2)
+plt.xticks(ticks=range(len(names)), labels=names, rotation=90)
 plt.ylabel('weight')
+plt.title('LL={:0.3f}'.format(np.mean(lls)))
+plt.show()
+print('ll: {:0.3f}'.format(np.mean(lls)))
