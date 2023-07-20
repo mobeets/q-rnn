@@ -13,7 +13,7 @@ def get_itis(self, ntrials=None):
     return self.iti_min + itis
 
 class Trial:
-    def __init__(self, state, iti=None, index_in_episode=None):
+    def __init__(self, state, iti=None, index_in_episode=None, episode_index=None):
         self.state = state
         self.iti = iti
         self.S = [] # states (if applicable)
@@ -24,6 +24,7 @@ class Trial:
         self.R = [] # rewards
         self.trial_length = 0
         self.index_in_episode = index_in_episode
+        self.episode_index = episode_index
         self.tag = None
 
     def update(self, o, a, r, h, q, s=None):

@@ -75,9 +75,9 @@ def probe_model(model, env, nepisodes, ntrials_per_episode, epsilon=0, tau=tol, 
                 done = False
                 
                 if hasattr(env, 'iti'):
-                    trial = Trial(env.state, env.iti, index_in_episode=j)
+                    trial = Trial(env.state, env.iti, index_in_episode=j, episode_index=i)
                 else:
-                    trial = Trial(state=None, index_in_episode=j)
+                    trial = Trial(state=None, index_in_episode=j, episode_index=i)
                 while not done:
                     obs = obs_next
                     if include_prev_reward:
@@ -103,7 +103,8 @@ def probe_model_off_policy(model, policymodel, env, nepisodes, ntrials_per_episo
     with torch.no_grad():
         for i in range(nepisodes):
             h = model.init_hidden_state(training=False)
-            hp = policymodel.init_hidden_state(training=False)
+            if policymodel is not None:
+                hp = policymodel.init_hidden_state(training=False)
             r = 0
             a_prev = np.zeros(env.action_space.n)
 
@@ -112,9 +113,9 @@ def probe_model_off_policy(model, policymodel, env, nepisodes, ntrials_per_episo
                 done = False
                 
                 if hasattr(env, 'iti'):
-                    trial = Trial(env.state, env.iti, index_in_episode=j)
+                    trial = Trial(env.state, env.iti, index_in_episode=j, episode_index=i)
                 else:
-                    trial = Trial(state=None, index_in_episode=j)
+                    trial = Trial(state=None, index_in_episode=j, episode_index=i)
                 while not done:
                     obs = obs_next
                     if include_prev_reward:
@@ -127,7 +128,10 @@ def probe_model_off_policy(model, policymodel, env, nepisodes, ntrials_per_episo
                     # cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
                     cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
                     _, (q, h) = model.sample_action(cobs, h.to(device), epsilon=epsilon, tau=tau)
-                    a, (_, hp) = policymodel.sample_action(cobs, hp.to(device), epsilon=epsilon, tau=tau)
+                    if policymodel is not None:
+                        a, (_, hp) = policymodel.sample_action(cobs, hp.to(device), epsilon=epsilon, tau=tau)
+                    else: # random action
+                        a, _ = model.sample_action(cobs, h.to(device), epsilon=1, tau=tau)
                     a_prev = np.zeros(env.action_space.n); a_prev[a] = 1.
 
                     # take action

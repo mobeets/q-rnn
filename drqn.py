@@ -34,7 +34,7 @@ eps_decay = 0.995 # time constant of decay for epsilon used in policy
 tau_start = 2.0 # initial tau used in softmax policy
 tau_end = 0.001 # final tau used in softmax policy
 tau_decay = 0.995 # time constant of decay for tau used in softmax policy
-useSoftmaxPolicy = True # if False, uses epsilon-greedy policy
+useSoftmaxPolicy = False # if False, uses epsilon-greedy policy
 
 # training params
 batch_size = 8
@@ -224,5 +224,5 @@ def parallel_train():
 
 if __name__ == '__main__':
     environment = 'beron2022'
-    run_name = 'beron_v5_p08_softmax'
-    train_model(environment, run_name, hidden_size=3)
+    run_name = 'beron_v8_p08_epsilon'
+    train_model(environment, run_name, hidden_size=6)
