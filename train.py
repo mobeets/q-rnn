@@ -7,10 +7,7 @@ device = torch.device('cpu')
 tol = np.finfo('float').min
 
 def train(q_net=None, target_q_net=None, episode_memory=None,
-          device=None, 
-          optimizer=None,
-          batch_size=1,
-          gamma=0.99):
+          device=None, optimizer=None, batch_size=1, gamma=0.99, l2_penalty=0):
 
     assert device is not None, "None Device input: device should be selected."
 
@@ -49,11 +46,15 @@ def train(q_net=None, target_q_net=None, episode_memory=None,
         targets = rewards + gamma*q_target_max*dones
 
     h = q_net.init_hidden_state(batch_size=batch_size, training=True)
-    q_out, _ = q_net(observations, h.to(device))
+    q_out, h_out = q_net(observations, h.to(device))
     q_a = q_out.gather(2, actions)
 
     # Multiply Importance Sampling weights to loss        
     loss = F.smooth_l1_loss(q_a, targets)
+    
+    if l2_penalty > 0:
+        # penalize L2 norm of RNN's activations
+        loss += l2_penalty * h_out.pow(2).sum(2).mean()
     
     # Update Network
     optimizer.zero_grad()

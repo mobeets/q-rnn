@@ -21,8 +21,8 @@ class DRQN(nn.Module):
         self.rng = default_rng()
 
     def forward(self, xin, hidden):
-        z, new_hidden = self.rnn(xin, hidden)
-        return self.output(z), new_hidden
+        z, _ = self.rnn(xin, hidden)
+        return self.output(z), z
     
     def reset_rng(self, seed):
         self.rng = default_rng(seed)

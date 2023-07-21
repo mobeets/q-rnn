@@ -152,7 +152,8 @@ def train_model(args):
                     cur_loss += train(Q, Q_target, episode_memory, device, 
                             optimizer=optimizer,
                             batch_size=args.batch_size,
-                            gamma=args.gamma)
+                            gamma=args.gamma,
+                            l2_penalty=args.l2_penalty)
 
                     if (t+1) % args.target_update_period == 0:
                         # update Q_target network
@@ -236,6 +237,8 @@ if __name__ == '__main__':
                         default=1, help='time steps between target network updates')
     parser.add_argument('-g', '--gamma', type=float,
                         default=0.9, help='reward discount factor')
+    parser.add_argument('--l2_penalty', type=float,
+                        default=0, help='penalty on L2 norm of RNN activations')
     parser.add_argument('--use_softmax_policy', action='store_true',
                         default=False, help='if False, uses epsilon-greedy policy')
     parser.add_argument('--include_prev_reward', action='store_true',
