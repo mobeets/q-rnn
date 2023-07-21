@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from model import DRQN
 from tasks.beron2022 import Beron2022_TrialLevel
-from train import probe_model, probe_model_off_policy
+from train import probe_model
 from analyze import add_beliefs_beron2022
 from analysis.correlations import analyze
 device = torch.device('cpu')
@@ -63,11 +63,11 @@ model = DRQN(input_size=4, # empty + prev reward + prev actions
                 output_size=env.action_space.n).to(device)
 model.load_weights_from_path(infile)
 
-policymodel = DRQN(input_size=4, # empty + prev reward + prev actions
+behavior_policy = DRQN(input_size=4, # empty + prev reward + prev actions
                 hidden_size=hidden_size,
                 output_size=env.action_space.n).to(device)
-policymodel.load_weights_from_path(infile)
-# policymodel = None # purely random policy
+behavior_policy.load_weights_from_path(infile)
+# behavior_policy = None
 
 # probe model
 Trials = {}
@@ -83,13 +83,13 @@ for useRandomModel in [True, False]:
         env.state = None
         env.reset(seed=seed)
         model.reset_rng(seed+1)
-        if policymodel is not None:
-            policymodel.reset_rng(seed+2)
+        if behavior_policy is not None:
+            behavior_policy.reset_rng(seed+2)
 
         # run model on trials
-        trials = probe_model_off_policy(model, policymodel, env,
-                                        epsilon=epsilon, tau=tau,
-                                        nepisodes=nepisodes, ntrials_per_episode=ntrials_per_episode)
+        trials = probe_model(model, env, behavior_policy=behavior_policy,
+                                epsilon=epsilon, tau=tau,
+                                nepisodes=nepisodes, ntrials_per_episode=ntrials_per_episode)
         print(useRandomModel, name, np.hstack([trial.R for trial in trials]).mean())
 
         # add beliefs
