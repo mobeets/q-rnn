@@ -53,17 +53,14 @@ trials = np.vstack(trials)
 # run_name = 'h10_2023-07-21-11-19-17-039345'
 # run_name = 'h10_2023-07-21-13-20-20-175694'
 # run_name = 'h2_2023-07-21-13-30-18-495491'
-run_name = 'h2_2023-07-21-14-00-25-723885'
-# run_name = 'h2_2023-07-21-14-01-21-991565'
 
 args = json.load(open('data/models/results_{}.json'.format(run_name)))
 env_params = {'p_rew_max': args['p_reward_max']}
 hidden_size = args['hidden_size']
+input_size = 4
 modelfile = args['filenames']['weightsfile_final']
 initial_modelfile = args['filenames']['weightsfile_initial']
 print('H={}, p={}'.format(hidden_size, env_params['p_rew_max']))
-
-input_size = 5 if args['prev_reward_onehot'] else 4
 
 epsilon = 0.0; tau = None
 # tau = 0.00001; epsilon = None
@@ -101,8 +98,7 @@ for useRandomModel in [True, False]:
         # run model on trials
         trials = probe_model(model, env, behavior_policy=behavior_policy,
                                 epsilon=epsilon, tau=tau,
-                                nepisodes=nepisodes, ntrials_per_episode=ntrials_per_episode,
-                                prev_reward_onehot=args['prev_reward_onehot'])
+                                nepisodes=nepisodes, ntrials_per_episode=ntrials_per_episode)
         print(useRandomModel, name, np.hstack([trial.R for trial in trials]).mean())
 
         # add beliefs
@@ -401,11 +397,7 @@ for sign in [0,1,2,3]:#,4,5]:
         name = 'r={}, a={}'.format(r_prev, np.where(a_prev)[0][0])
     else:
         name = 'r={}'.format(r_prev)
-    if args['prev_reward_onehot']:
-        r_cur = np.zeros(2); r_cur[r_prev] = 1.
-        obs = np.hstack([[0], r_cur, a_prev])
-    else:
-        obs = np.hstack([[0], [r_prev], a_prev])
+    obs = np.hstack([[0], [r_prev], a_prev])
     
     cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
     ix = np.all(X == obs, axis=1)
