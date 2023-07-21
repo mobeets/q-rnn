@@ -43,13 +43,21 @@ nepisodes = 1; ntrials_per_episode = 1000
 # infile = 'data/models/weights_final_h3_beron_v5_p08_epsilon.pth'
 # infile = 'data/models/weights_final_h3_beron_v6_p08_epsilon.pth'
 # infile = 'data/models/weights_final_h2_beron_v7_p08_epsilon.pth'
-infile = 'data/models/weights_final_h6_beron_v8_p08_epsilon.pth'
-env_params = {'p_rew_max': 0.8}
-env = Beron2022_TrialLevel(**env_params)
+# infile = 'data/models/weights_final_h6_beron_v8_p08_epsilon.pth'
+# infile = 'data/models/weights_final_h6_beron_v9_p08_epsilon.pth'
+# infile = 'data/models/weights_final_h2_beron_v10_p08_epsilon.pth'
+# infile = 'data/models/weights_final_h2_beron_v11_p08_epsilon.pth'
+# infile = 'data/models/weights_final_h2_beron_v12_p08_epsilon.pth'
+infile = 'data/models/weights_final_h3_beron_v13_p1_epsilon.pth'
+
+env_params = {'p_rew_max': float(infile.split('_p')[1].split('_')[0])/10}
 hidden_size = int(infile.split('_h')[1].split('_')[0])
-epsilon = 0.1; tau = None
+print('H={}, p={}'.format(hidden_size, env_params['p_rew_max']))
+
+epsilon = 0.01; tau = None
 # tau = 0.00001; epsilon = None
 
+env = Beron2022_TrialLevel(**env_params)
 model = DRQN(input_size=4, # empty + prev reward + prev actions
                 hidden_size=hidden_size,
                 output_size=env.action_space.n).to(device)
@@ -204,7 +212,7 @@ def toWord(seq):
         assert False
 
 trials = Trials['test']
-# trials = probe_model(model, env, nepisodes=50, ntrials_per_episode=1000, epsilon=0.1)
+trials = probe_model(model, env, nepisodes=50, ntrials_per_episode=1000, epsilon=0.01)
 
 symbs = [toSymbol(trial.A[0], trial.R[0]) for trial in trials]
 switches = []
@@ -333,6 +341,7 @@ from analysis.pca import fit_pca, apply_pca
 
 ninits = 100
 niters = 100
+showFPs = True
 
 pca = fit_pca(Trials['train'][10:])
 # pca.transform = lambda x: x
@@ -341,6 +350,7 @@ trials = apply_pca(Trials['test'][10:], pca)
 X = np.vstack([trial.X for trial in trials])
 Z = np.vstack([trial.Z for trial in trials])
 Zpc = pca.transform(Z)
+# Zpc = np.vstack([trial.Q for trial in trials]); showFPs = False
 
 zmin = Z.min()-0.01
 zmax = Z.max()+0.01
@@ -348,7 +358,7 @@ zmax = Z.max()+0.01
 plt.figure(figsize=(3,3))
 # plt.plot(Z[:,0], Z[:,1], 'k.', markersize=1, alpha=0.1, zorder=-1)
 
-for sign in [0,1,2,3]:
+for sign in [0,1,2,3,4,5]:
     if sign == 0:
         r_prev = 0
         a_prev = np.zeros(2); a_prev[0] = 1
@@ -372,26 +382,27 @@ for sign in [0,1,2,3]:
     else:
         name = 'r={}'.format(r_prev)
 
-    fps = []
-    for i in range(ninits):
-        zinit = np.random.rand(model.hidden_size)*(zmax-zmin) + zmin
-        h = torch.Tensor(zinit)[None,None,:]
-        zs = []
-        zs.append(h.detach().numpy().flatten())
-        for _ in range(niters):
-            obs = np.hstack([[0], [r_prev], a_prev])
-            cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
-            a, (q, h) = model.sample_action(cobs, h.to(device), epsilon=0)
-            zs.append(h.detach().numpy().flatten())
-        zs = np.vstack(zs)
-        # plt.plot(zs[:,0], zs[:,1], '.-', markersize=1, linewidth=1, alpha=0.2)
-        fps.append(zs[-1])
-    
-    fps = pca.transform(np.vstack(fps))
-    h = plt.plot(fps[:,0], fps[:,1], '+', markersize=5, linewidth=1, label=name)
-
+    obs = np.hstack([[0], [r_prev], a_prev])
+    cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
     ix = np.all(X == obs, axis=1)
-    plt.plot(Zpc[ix,0], Zpc[ix,1], '.', color=h[0].get_color(), markersize=1, alpha=0.1, zorder=-1)
+    hf = plt.plot(Zpc[ix,0], Zpc[ix,1], '.', markersize=1, alpha=0.3, zorder=-1, label=name if not showFPs else '_')
+
+    if showFPs:
+        fps = []
+        for i in range(ninits):
+            zinit = np.random.rand(model.hidden_size)*(zmax-zmin) + zmin
+            h = torch.Tensor(zinit)[None,None,:]
+            zs = []
+            zs.append(h.detach().numpy().flatten())
+            for _ in range(niters):
+                a, (q, h) = model.sample_action(cobs, h.to(device), epsilon=0)
+                zs.append(h.detach().numpy().flatten())
+            zs = np.vstack(zs)
+            # plt.plot(zs[:,0], zs[:,1], '.-', markersize=1, linewidth=1, alpha=0.2)
+            fps.append(zs[-1])
+        
+        fps = pca.transform(np.vstack(fps))
+        h = plt.plot(fps[:,0], fps[:,1], '+', color=hf[0].get_color(), markersize=5, linewidth=1, label=name)
 
 plt.legend(fontsize=8)
 
@@ -467,7 +478,8 @@ from analysis.decoding_beron import fit_logreg_policy, compute_logreg_probs
 if True:#'rnn_features' not in vars() or 'train' not in rnn_features:
     rnn_features = {}
     for name in ['train', 'test']:
-        trials = probe_model(model, env, nepisodes=50, ntrials_per_episode=1000, epsilon=0.0)
+        # trials = Trials[name]
+        trials = probe_model(model, env, nepisodes=1, ntrials_per_episode=10000, epsilon=0.0)
         A = np.vstack([trial.A for trial in trials])[:,0]
         R = np.vstack([trial.R for trial in trials])[:,0]
         rnn_features[name] = [[A,R]]
@@ -477,20 +489,16 @@ feature_functions = [
     lambda cs, rs: pm1(cs),                # choices
     lambda cs, rs: rs,                     # rewards
     lambda cs, rs: pm1(cs) * rs,           # +1 if choice=1 and reward, 0 if no reward, -1 if choice=0 and reward
-    lambda cs, rs: -pm1(cs) * (1-rs),       # -1 if choice=1 and no reward, 1 if reward, +1 if choice=0 and no reward
-    lambda cs, rs: (cs == rs),
-    lambda cs, rs: (cs != rs),
-    lambda cs, rs: pm1((cs == rs)),
+    lambda cs, rs: -pm1(cs) * (1-rs),      # -1 if choice=1 and no reward, 1 if reward, +1 if choice=0 and no reward
+    lambda cs, rs: pm1((cs == rs)),   
     lambda cs, rs: np.ones(len(cs))        # overall bias term
 ]
 
 feature_params = {
     'A': 5, # choice history
     'R': 0, # reward history
-    'A*R': 5, # choice * reward history (original)
-    'A*(R-1)': 5, # -choice * reward history
-    'A==R': 0, # choice == reward history
-    'A!=R': 0, # choice != reward history
+    'A*R': 5, # rewarded trials, aligned to action (original)
+    'A*(R-1)': 5, # unrewarded trials, aligned to action
     'B': 0 # belief history
 }
 memories = [y for x,y in feature_params.items()] + [1]

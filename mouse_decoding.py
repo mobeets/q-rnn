@@ -57,8 +57,6 @@ feature_params = {
     'R': 0, # reward history
     'A*R': 5, # choice * reward history (original)
     'A*(R-1)': 5, # -choice * reward history
-    'A==R': 0, # choice == reward history
-    'A!=R': 0, # choice != reward history
     'B': 0 # belief history
 }
 memories = [y for x,y in feature_params.items()] + [1]

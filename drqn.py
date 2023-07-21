@@ -19,11 +19,11 @@ from tasks.beron2022 import Beron2022_TrialLevel
 learning_rate = 1e-3 # initial learning rate
 buffer_len = int(100000)
 min_epi_num = 8 # episodes to run before training the Q network
-episodes = 1500 # total number of episodes to train on
+episodes = 200 # total number of episodes to train on
 # ntrials_per_episode = 20 # number of trials comprising an episode
 ntrials_per_episode = 800 # number of trials comprising an episode
 print_per_iter = 1 # episodes between printing status
-target_update_period = 4 # time steps between target network updates
+target_update_period = 1 # time steps between target network updates
 q_tau = 1e-2 # exponential smoothing parameter for target network update
 max_trial_length = 1000 # max number of time steps in episode
 
@@ -62,7 +62,7 @@ def save_params(environment, run_name, hidden_size, filenames):
 def save_results(all_trials, outfile):
     np.save(outfile, all_trials)
 
-def train_model(environment, run_name=None, hidden_size=4):
+def train_model(environment, run_name=None, hidden_size=4, p_reward_max=0.8):
     if run_name is None:
         run_name = str(datetime.datetime.now()).replace(' ', '-').replace('.', '-').replace(':', '-')
 
@@ -71,7 +71,7 @@ def train_model(environment, run_name=None, hidden_size=4):
         env_params = {'reward_amounts': [20, -400, -400, -1]}
         env = Roitman2002(**env_params)
     elif environment == 'beron2022':
-        env_params = {'p_rew_max': 0.8}
+        env_params = {'p_rew_max': p_reward_max}
         env = Beron2022_TrialLevel(**env_params)
 
     # prepare to save
@@ -177,7 +177,7 @@ def train_model(environment, run_name=None, hidden_size=4):
 
         # evaluate model using greedy policy
         test_trials = probe_model(Q, env, 1, ntrials_per_episode,
-                             epsilon=0, # always greedy, whether using softmax policy or not
+                             epsilon=0, # always evaluate with greedy policy
                              include_prev_reward=include_prev_reward, include_prev_action=include_prev_action)
         cur_avg_score = np.hstack([x.R for x in test_trials]).mean()
 
@@ -224,5 +224,5 @@ def parallel_train():
 
 if __name__ == '__main__':
     environment = 'beron2022'
-    run_name = 'beron_v9_p08_epsilon'
-    train_model(environment, run_name, hidden_size=6)
+    run_name = 'beron_v13_p1_epsilon'
+    train_model(environment, run_name, hidden_size=3, p_reward_max=1.0)
