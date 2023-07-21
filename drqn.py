@@ -26,6 +26,7 @@ q_tau = 1e-2 # exponential smoothing parameter for target network update
 # policy parameters
 eps_start = 0.5 # initial epsilon used in policy
 eps_end = 0.001 # final epsilon used in policy
+# eps_start = 2; eps_end = 1; print("WARNING: eps always 1")
 eps_decay = 0.995 # time constant of decay for epsilon used in policy
 tau_start = 2.0 # initial tau used in softmax policy
 tau_end = 0.001 # final tau used in softmax policy

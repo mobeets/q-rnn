@@ -51,18 +51,21 @@ trials = np.vstack(trials)
 # run_name = 'h3_beron_v13_p1_epsilon'
 # run_name = 'h10_2023-07-21-11-19-17-039345'
 # run_name = 'h10_2023-07-21-11-19-17-039345'
-# run_name = 'h10_2023-07-21-13-20-20-175694'
+run_name = 'h10_2023-07-21-13-20-20-175694'
 # run_name = 'h2_2023-07-21-13-30-18-495491'
+run_name = 'h2_2023-07-21-14-21-40-357992'
+run_name = 'h2_2023-07-21-14-33-29-841107'
+run_name = 'h2_2023-07-21-14-57-55-870084' # random policy all thru training
 
 args = json.load(open('data/models/results_{}.json'.format(run_name)))
-env_params = {'p_rew_max': args['p_reward_max']}
+env_params = {'p_rew_max': args.get('p_reward_max', 0.8)}
 hidden_size = args['hidden_size']
 input_size = 4
 modelfile = args['filenames']['weightsfile_final']
 initial_modelfile = args['filenames']['weightsfile_initial']
 print('H={}, p={}'.format(hidden_size, env_params['p_rew_max']))
 
-epsilon = 0.0; tau = None
+epsilon = 0; tau = None
 # tau = 0.00001; epsilon = None
 nepisodes = 1; ntrials_per_episode = 1000
 
@@ -352,7 +355,7 @@ ninits = 100
 niters = 100
 showPCs = False
 showFPs = True
-showQ = False
+showQ = True
 
 pca = fit_pca(Trials['train'])
 if showQ:
@@ -407,6 +410,8 @@ for sign in [0,1,2,3]:#,4,5]:
         fps = []
         for i in range(ninits):
             zinit = np.random.rand(model.hidden_size)*(zmax-zmin) + zmin
+            zinit = Z[np.random.choice(len(Z))] + (np.random.rand(model.hidden_size)-0.5)
+
             h = torch.Tensor(zinit)[None,None,:]
             zs = []
             zs.append(h.detach().numpy().flatten())
@@ -414,7 +419,12 @@ for sign in [0,1,2,3]:#,4,5]:
                 a, (q, h) = model.sample_action(cobs, h.to(device), epsilon=0)
                 zs.append(h.detach().numpy().flatten())
             zs = np.vstack(zs)
-            # plt.plot(zs[:,0], zs[:,1], '.-', markersize=1, linewidth=1, alpha=0.2)
+
+            # if sign == 0:
+            #     v = zs[1]-zs[0]
+            #     z0 = pca.transform(np.vstack([zs[0], zs[0] + 0.5*v]))#/np.linalg.norm(v)]))
+            #     plt.plot([z0[0,0], z0[1,0]], [z0[0,1], z0[1,1]], 'k-', linewidth=1, alpha=0.2)
+            #     plt.plot(z0[1,0], z0[1,1], 'k.', markersize=1, alpha=0.2)
             fps.append(zs[-1])
         
         fps = pca.transform(np.vstack(fps))
