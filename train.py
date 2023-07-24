@@ -72,8 +72,21 @@ def prev_action_wrapper(obs, a, k):
         ac[a] = 1.
     return np.hstack([obs, ac])
 
+def beron_wrapper(obs):
+    assert len(obs) == 4 # null, rew, aL, aR
+    new_obs = np.zeros(4)
+    if obs[1] == 1 and obs[2] == 1:
+        new_obs[1] = 1. # A
+    elif obs[1] == 0 and obs[3] == 1:
+        new_obs[1] = 1. # b
+    elif obs[1] == 0 and obs[2] == 1:
+        new_obs[2] = 1. # a
+    elif obs[1] == 1 and obs[3] == 1:
+        new_obs[2] = 1. # B
+    return new_obs
+
 def probe_model(model, env, nepisodes, ntrials_per_episode, behavior_policy=None,
-                epsilon=0, tau=tol, include_prev_reward=True, include_prev_action=True):
+                epsilon=0, tau=tol, include_prev_reward=True, include_prev_action=True, include_beron_wrapper=False):
     
     trials = []
     with torch.no_grad():
@@ -85,7 +98,13 @@ def probe_model(model, env, nepisodes, ntrials_per_episode, behavior_policy=None
             a = None
 
             for j in range(ntrials_per_episode):
-                obs = env.reset()[0]
+                obs = np.array([env.reset()[0]])
+                if include_prev_reward:
+                    obs = prev_reward_wrapper(obs, r)
+                if include_prev_action:
+                    obs = prev_action_wrapper(obs, a, env.action_space.n)
+                if include_beron_wrapper:
+                    obs = beron_wrapper(obs)
                 done = False
                 
                 if hasattr(env, 'iti'):
@@ -93,15 +112,8 @@ def probe_model(model, env, nepisodes, ntrials_per_episode, behavior_policy=None
                 else:
                     trial = Trial(state=None, index_in_episode=j, episode_index=i)
                 while not done:   
-                    # prepare observation
-                    obs = np.array([obs])
-                    if include_prev_reward:
-                        obs = prev_reward_wrapper(obs, r)
-                    if include_prev_action:
-                        obs = prev_action_wrapper(obs, a, env.action_space.n)
-                    cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
-                    
                     # get action
+                    cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
                     if behavior_policy is None:
                         a, (q, h) = model.sample_action(cobs, 
                                             h.to(device), epsilon=epsilon, tau=tau)
@@ -111,6 +123,14 @@ def probe_model(model, env, nepisodes, ntrials_per_episode, behavior_policy=None
 
                     # take action
                     obs_next, r, done, truncated, info = env.step(a)
+
+                    # prepare next observation
+                    if include_prev_reward:
+                        obs_next = prev_reward_wrapper(obs_next, r)
+                    if include_prev_action:
+                        obs_next = prev_action_wrapper(obs_next, a, env.action_space.n)
+                    if include_beron_wrapper:
+                        obs_next = beron_wrapper(obs_next)
 
                     # save
                     trial.update(obs, a, r, h.numpy(), q.numpy(), info.get('state', None))

@@ -12,7 +12,7 @@ import torch.optim as optim
 device = torch.device('cpu')
 
 from model import DRQN
-from train import train, probe_model, prev_action_wrapper, prev_reward_wrapper
+from train import train, probe_model, prev_action_wrapper, prev_reward_wrapper, beron_wrapper
 from replay import EpisodeMemory, EpisodeBuffer
 from tasks.roitman2002 import Roitman2002
 from tasks.beron2022 import Beron2022_TrialLevel
@@ -123,23 +123,31 @@ def train_model(args):
 
         episode_record = EpisodeBuffer()
         for _ in range(args.ntrials_per_episode):
-            obs = env.reset()[0]
+            obs = np.array([env.reset()[0]])
+            if args.include_prev_reward:
+                obs = prev_reward_wrapper(obs, r)
+            if args.include_prev_action:
+                obs = prev_action_wrapper(obs, a, env.action_space.n)
+            if args.include_beron_wrapper:
+                obs = beron_wrapper(obs)
+
             done = False            
             while not done:
-                # prepare observation
-                obs = np.array([obs])
-                if args.include_prev_reward:
-                    obs = prev_reward_wrapper(obs, r)
-                if args.include_prev_action:
-                    obs = prev_action_wrapper(obs, a, env.action_space.n)
-                cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
-            
                 # get action
+                cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
                 a, (q,h) = Q.sample_action(cobs, h.to(device), epsilon=epsilon, tau=tau)
 
                 # take action 
                 obs_next, r, done, truncated, info = env.step(a)
 
+                # prepare next observation
+                if args.include_prev_reward:
+                    obs_next = prev_reward_wrapper(obs_next, r)
+                if args.include_prev_action:
+                    obs_next = prev_action_wrapper(obs_next, a, env.action_space.n)
+                if args.include_beron_wrapper:
+                    obs_next = beron_wrapper(obs_next)
+                    
                 # make data
                 episode_record.put([obs, a, r/100.0, obs_next, 0.0 if done else 1.0])
                 obs = obs_next
@@ -167,7 +175,8 @@ def train_model(args):
         test_trials = probe_model(Q, env, 1, args.ntrials_per_episode,
                              epsilon=0, # always evaluate with greedy policy
                              include_prev_reward=args.include_prev_reward,
-                             include_prev_action=args.include_prev_action)
+                             include_prev_action=args.include_prev_action,
+                             include_beron_wrapper=args.include_beron_wrapper)
         cur_score = np.hstack([x.R for x in test_trials]).mean()
         scores.append(cur_score)
 
@@ -241,6 +250,8 @@ if __name__ == '__main__':
     parser.add_argument('--include_prev_reward', action='store_true',
                         default=False)
     parser.add_argument('--include_prev_action', action='store_true',
+                        default=False)
+    parser.add_argument('--include_beron_wrapper', action='store_true',
                         default=False)
     args = parser.parse_args()
     if args.experiment == 'beron2022':
