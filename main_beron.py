@@ -56,7 +56,8 @@ run_name = 'h10_2023-07-21-13-20-20-175694'
 run_name = 'h2_2023-07-21-14-21-40-357992'
 run_name = 'h2_2023-07-21-14-33-29-841107'
 run_name = 'h2_2023-07-21-14-57-55-870084' # random policy all thru training
-run_name = 'h10_tmp'
+run_name = 'h3_beronwrap'
+run_name = 'h2_beronwrap'
 
 args = json.load(open('data/models/results_{}.json'.format(run_name)))
 env_params = {'p_rew_max': args.get('p_reward_max', 0.8)}
@@ -102,7 +103,8 @@ for useRandomModel in [True, False]:
         # run model on trials
         trials = probe_model(model, env, behavior_policy=behavior_policy,
                                 epsilon=epsilon, tau=tau,
-                                nepisodes=nepisodes, ntrials_per_episode=ntrials_per_episode)
+                                nepisodes=nepisodes, ntrials_per_episode=ntrials_per_episode,
+                                include_beron_wrapper=args['include_beron_wrapper'])
         print(useRandomModel, name, np.hstack([trial.R for trial in trials]).mean())
 
         # add beliefs
@@ -354,9 +356,9 @@ from analysis.pca import fit_pca, apply_pca
 
 ninits = 100
 niters = 100
-showPCs = False
+showPCs = True
 showFPs = True
-showQ = True
+showQ = False
 
 pca = fit_pca(Trials['train'])
 if showQ:
@@ -379,29 +381,43 @@ zmax = Z.max()+0.01
 plt.figure(figsize=(3,3))
 
 for sign in [0,1,2,3]:#,4,5]:
-    if sign == 0:
-        r_prev = 0
-        a_prev = np.zeros(2); a_prev[0] = 1
-    elif sign == 1:
-        r_prev = 1
-        a_prev = np.zeros(2); a_prev[1] = 1
-    elif sign == 2:
-        r_prev = 0
-        a_prev = np.zeros(2); a_prev[1] = 1
-    elif sign == 3:
-        r_prev = 1
-        a_prev = np.zeros(2); a_prev[0] = 1
-    elif sign == 4:
-        r_prev = 0
-        a_prev = np.zeros(2)
-    elif sign == 5:
-        r_prev = 1
-        a_prev = np.zeros(2)
-    if sign < 4:
-        name = 'r={}, a={}'.format(r_prev, np.where(a_prev)[0][0])
+    if args['include_beron_wrapper']:
+        if sign == 0:
+            obs = np.array([1,0,0,0])
+            name = 'A'
+        elif sign == 1:
+            obs = np.array([0,1,0,0])
+            name = 'b'
+        elif sign == 2:
+            obs = np.array([0,0,1,0])
+            name = 'a'
+        elif sign == 3:
+            obs = np.array([0,0,0,1])
+            name = 'B'
     else:
-        name = 'r={}'.format(r_prev)
-    obs = np.hstack([[0], [r_prev], a_prev])
+        if sign == 0:
+            r_prev = 0
+            a_prev = np.zeros(2); a_prev[0] = 1
+        elif sign == 1:
+            r_prev = 1
+            a_prev = np.zeros(2); a_prev[1] = 1
+        elif sign == 2:
+            r_prev = 0
+            a_prev = np.zeros(2); a_prev[1] = 1
+        elif sign == 3:
+            r_prev = 1
+            a_prev = np.zeros(2); a_prev[0] = 1
+        elif sign == 4:
+            r_prev = 0
+            a_prev = np.zeros(2)
+        elif sign == 5:
+            r_prev = 1
+            a_prev = np.zeros(2)
+        obs = np.hstack([[0], [r_prev], a_prev])
+        if sign < 4:
+            name = 'r={}, a={}'.format(r_prev, np.where(a_prev)[0][0])
+        else:
+            name = 'r={}'.format(r_prev)
     
     cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
     ix = np.all(X == obs, axis=1)

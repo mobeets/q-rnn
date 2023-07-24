@@ -76,14 +76,14 @@ def beron_wrapper(obs):
     assert len(obs) == 4 # null, rew, aL, aR
     new_obs = np.zeros(4)
     if obs[1] == 1 and obs[2] == 1:
-        new_obs[1] = 1. # A
+        new_obs[0] = 1. # A
     elif obs[1] == 0 and obs[3] == 1:
         new_obs[1] = 1. # b
     elif obs[1] == 0 and obs[2] == 1:
         new_obs[2] = 1. # a
     elif obs[1] == 1 and obs[3] == 1:
-        new_obs[2] = 1. # B
-    return new_obs
+        new_obs[3] = 1. # B
+    return new_obs # A, b, a, B
 
 def probe_model(model, env, nepisodes, ntrials_per_episode, behavior_policy=None,
                 epsilon=0, tau=tol, include_prev_reward=True, include_prev_action=True, include_beron_wrapper=False):
