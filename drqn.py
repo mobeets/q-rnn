@@ -12,7 +12,7 @@ import torch.optim as optim
 device = torch.device('cpu')
 
 from model import DRQN
-from train import train, probe_model
+from train import train, probe_model, prev_action_wrapper, prev_reward_wrapper
 from replay import EpisodeMemory, EpisodeBuffer
 from tasks.roitman2002 import Roitman2002
 from tasks.beron2022 import Beron2022_TrialLevel
@@ -116,33 +116,29 @@ def train_model(args):
     scores = []
     for i in range(args.episodes):
         r = 0
-        a_prev = np.zeros(env.action_space.n)
+        a = None
         h = Q.init_hidden_state(training=False)
         cur_loss = 0
         t = 0
 
         episode_record = EpisodeBuffer()
         for _ in range(args.ntrials_per_episode):
-            obs = np.array([env.reset()[0]])
-            if args.include_prev_reward:
-                obs = np.hstack([obs, [r]]) # add previous reward
-            if args.include_prev_action:
-                obs = np.hstack([obs, a_prev]) # add previous action
-            done = False
-            
+            obs = env.reset()[0]
+            done = False            
             while not done:
+                # prepare observation
+                obs = np.array([obs])
+                if args.include_prev_reward:
+                    obs = prev_reward_wrapper(obs, r)
+                if args.include_prev_action:
+                    obs = prev_action_wrapper(obs, a, env.action_space.n)
+                cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
+            
                 # get action
-                a, (q,h) = Q.sample_action(torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0), 
-                                        h.to(device), epsilon=epsilon, tau=tau)
+                a, (q,h) = Q.sample_action(cobs, h.to(device), epsilon=epsilon, tau=tau)
 
                 # take action 
                 obs_next, r, done, truncated, info = env.step(a)
-                obs_next = np.array([obs_next])
-                if args.include_prev_reward:
-                    obs_next = np.hstack([obs_next, [r]]) # add previous reward
-                if args.include_prev_action:
-                    a_prev = np.zeros(env.action_space.n); a_prev[a] = 1.
-                    obs_next = np.hstack([obs_next, a_prev]) # add previous action
 
                 # make data
                 episode_record.put([obs, a, r/100.0, obs_next, 0.0 if done else 1.0])
@@ -248,7 +244,7 @@ if __name__ == '__main__':
                         default=False)
     args = parser.parse_args()
     if args.experiment == 'beron2022':
-        print('WARNING: For {}, auto-including prev reward and action.'.format(args.experiment))
+        print('WARNING: For {}, auto-including prev reward and action.\n'.format(args.experiment))
         args.include_prev_reward = True
         args.include_prev_action = True
     print(args)

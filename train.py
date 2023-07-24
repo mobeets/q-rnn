@@ -63,6 +63,15 @@ def train(q_net=None, target_q_net=None, episode_memory=None,
     
     return loss/batch_size
 
+def prev_reward_wrapper(obs, r):
+    return np.hstack([obs, [r]])
+
+def prev_action_wrapper(obs, a, k):
+    ac = np.zeros(k)
+    if a is not None:
+        ac[a] = 1.
+    return np.hstack([obs, ac])
+
 def probe_model(model, env, nepisodes, ntrials_per_episode, behavior_policy=None,
                 epsilon=0, tau=tol, include_prev_reward=True, include_prev_action=True):
     
@@ -73,23 +82,26 @@ def probe_model(model, env, nepisodes, ntrials_per_episode, behavior_policy=None
             if behavior_policy is not None:
                 hp = behavior_policy.init_hidden_state(training=False)
             r = 0
-            a_prev = np.zeros(env.action_space.n)
+            a = None
 
             for j in range(ntrials_per_episode):
-                obs = np.array([env.reset()[0]])
-                if include_prev_reward:
-                    obs = np.hstack([obs, [r]]) # add previous reward
-                if include_prev_action:
-                    obs = np.hstack([obs, a_prev]) # add previous action
+                obs = env.reset()[0]
                 done = False
                 
                 if hasattr(env, 'iti'):
                     trial = Trial(env.state, env.iti, index_in_episode=j, episode_index=i)
                 else:
                     trial = Trial(state=None, index_in_episode=j, episode_index=i)
-                while not done:                    
-                    # get action
+                while not done:   
+                    # prepare observation
+                    obs = np.array([obs])
+                    if include_prev_reward:
+                        obs = prev_reward_wrapper(obs, r)
+                    if include_prev_action:
+                        obs = prev_action_wrapper(obs, a, env.action_space.n)
                     cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
+                    
+                    # get action
                     if behavior_policy is None:
                         a, (q, h) = model.sample_action(cobs, 
                                             h.to(device), epsilon=epsilon, tau=tau)
@@ -99,14 +111,6 @@ def probe_model(model, env, nepisodes, ntrials_per_episode, behavior_policy=None
 
                     # take action
                     obs_next, r, done, truncated, info = env.step(a)
-
-                    # build next obs
-                    obs_next = np.array([obs_next])
-                    if include_prev_reward:
-                        obs_next = np.hstack([obs_next, [r]]) # add previous reward
-                    if include_prev_action:
-                        a_prev = np.zeros(env.action_space.n); a_prev[a] = 1.
-                        obs_next = np.hstack([obs_next, a_prev]) # add previous action
 
                     # save
                     trial.update(obs, a, r, h.numpy(), q.numpy(), info.get('state', None))

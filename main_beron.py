@@ -56,6 +56,7 @@ run_name = 'h10_2023-07-21-13-20-20-175694'
 run_name = 'h2_2023-07-21-14-21-40-357992'
 run_name = 'h2_2023-07-21-14-33-29-841107'
 run_name = 'h2_2023-07-21-14-57-55-870084' # random policy all thru training
+run_name = 'h10_tmp'
 
 args = json.load(open('data/models/results_{}.json'.format(run_name)))
 env_params = {'p_rew_max': args.get('p_reward_max', 0.8)}
