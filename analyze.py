@@ -1,5 +1,41 @@
 import numpy as np
 
+def lsql(experience, gamma, k=None, d=None):
+    """
+    source: "Least-Squares Methods in Reinforcement Learning for Control" Lagoudakis et al. (2002)
+    """
+    if k is None:
+        k = len(np.unique([s for s,a,r,sp in experience])) # number of states
+    if d is None:
+        d = len(np.unique([a for s,a,r,sp in experience])) # number of actions
+    A = np.zeros((k*d,k*d))
+    b = np.zeros((k*d,1))
+    w = np.zeros((k*d,1))
+
+    def zf(s,a):
+        z = np.zeros((k,d))
+        z[s,a] = 1.
+        return z.flatten()[:,None]
+
+    for t, (s,a,r,sprime) in enumerate(experience):
+        z = zf(s,a)
+        Ac = z @ z.T
+        if gamma > 0:
+            aprime = np.argmax(w.reshape(k,d)[sprime,:])
+            zp = zf(sprime,aprime)
+            bc = z*(r + gamma*(zp.T @ w))
+        else:
+            bc = z*r
+
+        alpha = 1/(t+1)
+        A = (1-alpha)*A + alpha*Ac
+        b = (1-alpha)*b + alpha*bc
+        if gamma > 0:
+            w = np.linalg.lstsq(A, b, rcond=None)[0]
+
+    w = np.linalg.lstsq(A, b, rcond=None)[0]
+    return w.reshape(k,d)
+
 def belief_fixed_points_beron2022(p_rew_max, p_switch, niters=100):
     Bs = {}
     b_inits = [0, 0.25, 0.5, 0.75, 1]
@@ -36,11 +72,11 @@ def add_beliefs_beron2022(trials, p_rew_max, p_switch, b_init=0.5):
             b_lik = b_prev*b_lik_1 / ((1-b_prev)*b_lik_0 + b_prev*b_lik_1)
             b = p_switch*(1-b_lik) + (1-p_switch)*b_lik
 
-        trial.B = b
+        trial.B = np.array([b]*len(trial.A))[:,None]
         B.append(b)
         b_prev = b
-        a_prev = trial.A[0]
-        r_prev = trial.R[0]
+        a_prev = trial.A[-1]
+        r_prev = trial.R[-1]
 
     B = np.hstack(B)[:,None]
     O = None

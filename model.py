@@ -8,16 +8,21 @@ from torch.distributions.categorical import Categorical
 class DRQN(nn.Module):
     def __init__(self, input_size,
                  hidden_size,
-                 output_size):
+                 output_size,
+                 recurrent_cell='GRU'):
         super(DRQN, self).__init__()
         self.hidden_size = hidden_size
         self.input_size = input_size
         self.output_size = output_size
-        self.recurrent_cell = 'GRU'
-        self.rnn = nn.GRU(self.input_size, self.hidden_size, batch_first=True)
+        self.recurrent_cell = recurrent_cell.lower()
+        if self.recurrent_cell == 'gru':
+            self.rnn = nn.GRU(self.input_size, self.hidden_size, batch_first=True)
+        elif self.recurrent_cell == 'rnn':
+            self.rnn = nn.RNN(self.input_size, self.hidden_size, batch_first=True)
+        else:
+            raise Exception("Invalid recurrent_cell type. Supported options: ['rnn', 'gru']")
         self.output = nn.Linear(self.hidden_size, self.output_size)
         self.initial_weights = self.checkpoint_weights()
-        assert self.recurrent_cell == 'GRU'
         self.rng = default_rng()
 
     def forward(self, xin, hidden):
@@ -55,6 +60,7 @@ class DRQN(nn.Module):
     def load_weights_from_path(self, path):
         self.load_state_dict(torch.load(path))
 
+
     def initialize(self, gain=1):
         """
         https://github.com/rodrigorivera/mds20_replearning/blob/0426340725fd55a616b0d40356ddcebe06ed0f24/skip_thought_vectors/encoder.py
@@ -62,8 +68,7 @@ class DRQN(nn.Module):
         https://gist.github.com/kaniblu/81828dfcf5cca60ae93f4d7bd19aeac5
         https://pytorch.org/docs/stable/nn.init.html
         """
-        assert self.recurrent_cell == 'GRU'
-        print("WARNING: Using tensorflow-style initialization of GRU")
+        assert self.recurrent_cell.lower() in ['gru', 'rnn']
         for weight_ih, weight_hh, bias_ih, bias_hh in self.rnn.all_weights:
             bias_ih.data.fill_(0)
             bias_hh.data.fill_(0)

@@ -15,7 +15,7 @@ from model import DRQN
 from train import train, probe_model, prev_action_wrapper, prev_reward_wrapper, beron_wrapper
 from replay import EpisodeMemory, EpisodeBuffer
 from tasks.roitman2002 import Roitman2002
-from tasks.beron2022 import Beron2022_TrialLevel
+from tasks.beron2022 import Beron2022, Beron2022_TrialLevel
 
 # training parameters
 learning_rate = 1e-3 # initial learning rate
@@ -68,7 +68,8 @@ def balance_model_to_explore_actions(model, env, args):
     trials = probe_model(model, env, 1, args.ntrials_per_episode,
                         epsilon=1, # random policy
                         include_prev_reward=args.include_prev_reward,
-                        include_prev_action=args.include_prev_action)
+                        include_prev_action=args.include_prev_action,
+                        include_beron_wrapper=args.include_beron_wrapper)
     Q = np.vstack([x.Q for x in trials])
     model.output.bias = torch.nn.Parameter(torch.Tensor(-Q.mean(axis=0)))
 
@@ -77,18 +78,26 @@ def train_model(args):
     if args.experiment == 'roitman2002':
         env_params = {'reward_amounts': [20, -400, -400, -1]}
         env = Roitman2002(**env_params)
-    elif args.experiment == 'beron2022':
-        env_params = {'p_rew_max': args.p_reward_max}
+    elif args.experiment == 'beron2022_trial':
+        env_params = {'p_rew_max': args.p_reward_max, 'p_switch': args.p_switch}
         env = Beron2022_TrialLevel(**env_params)
+    elif args.experiment == 'beron2022_time':
+        env_params = {'p_rew_max': args.p_reward_max, 'p_switch': args.p_switch}
+        env = Beron2022(**env_params)
 
     # create models
-    Q = DRQN(input_size=1 + args.include_prev_reward + args.include_prev_action*env.action_space.n, # stim and reward
+    input_size = 1 + args.include_prev_reward + args.include_prev_action*env.action_space.n
+    if args.include_beron_wrapper and '_time' in args.experiment:
+        input_size += 1
+    Q = DRQN(input_size=input_size,
                 hidden_size=args.hidden_size,
-                output_size=env.action_space.n).to(device)
+                output_size=env.action_space.n,
+                recurrent_cell=args.recurrent_cell).to(device)
     balance_model_to_explore_actions(Q, env, args)
     Q_target = DRQN(input_size=Q.input_size, # stim and reward
                         hidden_size=Q.hidden_size,
-                        output_size=Q.output_size).to(device)
+                        output_size=Q.output_size,
+                        recurrent_cell=args.recurrent_cell).to(device)
     Q_target.load_state_dict(Q.state_dict())
     
     # prepare to save
@@ -129,7 +138,7 @@ def train_model(args):
             if args.include_prev_action:
                 obs = prev_action_wrapper(obs, a, env.action_space.n)
             if args.include_beron_wrapper:
-                obs = beron_wrapper(obs)
+                obs = beron_wrapper(obs, Q.input_size)
 
             done = False            
             while not done:
@@ -146,7 +155,7 @@ def train_model(args):
                 if args.include_prev_action:
                     obs_next = prev_action_wrapper(obs_next, a, env.action_space.n)
                 if args.include_beron_wrapper:
-                    obs_next = beron_wrapper(obs_next)
+                    obs_next = beron_wrapper(obs_next, Q.input_size)
                     
                 # make data
                 episode_record.put([obs, a, r/100.0, obs_next, 0.0 if done else 1.0])
@@ -226,9 +235,13 @@ if __name__ == '__main__':
     parser.add_argument('-d', '--save_dir', type=str,
                         default='data/models', help='where to save trained model')
     parser.add_argument('--experiment', type=str,
-                        default='beron2022', choices=['beron2022', 'roitman2002'])
+                        default='beron2022_trial', choices=['beron2022_time', 'roitman2002', 'beron2022_trial'])
+    parser.add_argument('--recurrent_cell', type=str,
+                        default='gru', choices=['gru', 'rnn'])
     parser.add_argument('--p_reward_max', type=float,
-                        default=0.8, help='max reward probability of arm (beron2022 env only)')
+                        default=0.8, help='reward probability of best arm (beron2022 env only)')
+    parser.add_argument('--p_switch', type=float,
+                        default=0.02, help='switch probability of best arm (beron2022 env only)')
     parser.add_argument('-k', '--hidden_size', type=int,
                         default=10, help='number of hidden units in the rnn')
     parser.add_argument('-b', '--batch_size', type=int,
@@ -254,7 +267,7 @@ if __name__ == '__main__':
     parser.add_argument('--include_beron_wrapper', action='store_true',
                         default=False)
     args = parser.parse_args()
-    if args.experiment == 'beron2022':
+    if 'beron2022' in args.experiment:
         print('WARNING: For {}, auto-including prev reward and action.\n'.format(args.experiment))
         args.include_prev_reward = True
         args.include_prev_action = True

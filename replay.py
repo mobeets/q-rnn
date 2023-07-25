@@ -66,34 +66,34 @@ class EpisodeBuffer:
         self.action = []
         self.reward = []
         self.next_obs = []
-        self.done = []
+        self.not_done = []
 
     def put(self, transition):
         self.obs.append(transition[0])
         self.action.append(transition[1])
         self.reward.append(transition[2])
         self.next_obs.append(transition[3])
-        self.done.append(transition[4])
+        self.not_done.append(transition[4])
 
     def sample(self, random_update=False, lookup_step=None, idx=None) -> Dict[str, np.ndarray]:
         obs = np.array(self.obs)
         action = np.array(self.action)
         reward = np.array(self.reward)
         next_obs = np.array(self.next_obs)
-        done = np.array(self.done)
+        not_done = np.array(self.not_done)
 
         if random_update is True:
             obs = obs[idx:idx+lookup_step]
             action = action[idx:idx+lookup_step]
             reward = reward[idx:idx+lookup_step]
             next_obs = next_obs[idx:idx+lookup_step]
-            done = done[idx:idx+lookup_step]
+            not_done = not_done[idx:idx+lookup_step]
 
         return dict(obs=obs,
                     acts=action,
                     rews=reward,
                     next_obs=next_obs,
-                    done=done)
+                    not_done=not_done)
 
     def __len__(self) -> int:
         return len(self.obs)

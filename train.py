@@ -18,39 +18,39 @@ def train(q_net=None, target_q_net=None, episode_memory=None,
     actions = []
     rewards = []
     next_observations = []
-    dones = []
+    not_dones = []
 
     for i in range(batch_size):
         observations.append(samples[i]["obs"])
         actions.append(samples[i]["acts"])
         rewards.append(samples[i]["rews"])
         next_observations.append(samples[i]["next_obs"])
-        dones.append(samples[i]["done"])
+        not_dones.append(samples[i]["not_done"])
 
     observations = np.array(observations)
     actions = np.array(actions)
     rewards = np.array(rewards)
     next_observations = np.array(next_observations)
-    dones = np.array(dones)
+    not_dones = np.array(not_dones)
 
     observations = torch.FloatTensor(observations.reshape(batch_size,seq_len,-1)).to(device)
     actions = torch.LongTensor(actions.reshape(batch_size,seq_len,-1)).to(device)
     rewards = torch.FloatTensor(rewards.reshape(batch_size,seq_len,-1)).to(device)
     next_observations = torch.FloatTensor(next_observations.reshape(batch_size,seq_len,-1)).to(device)
-    dones = torch.FloatTensor(dones.reshape(batch_size,seq_len,-1)).to(device)
+    not_dones = torch.FloatTensor(not_dones.reshape(batch_size,seq_len,-1)).to(device)
 
     with torch.no_grad():
         h_target = target_q_net.init_hidden_state(batch_size=batch_size, training=True)
         q_target, _ = target_q_net(next_observations, h_target.to(device))
         q_target_max = q_target.max(2)[0].view(batch_size,seq_len,-1).detach()
-        targets = rewards + gamma*q_target_max*dones
+        targets = rewards + gamma*q_target_max*not_dones
 
     h = q_net.init_hidden_state(batch_size=batch_size, training=True)
     q_out, h_out = q_net(observations, h.to(device))
     q_a = q_out.gather(2, actions)
 
-    # Multiply Importance Sampling weights to loss        
-    loss = F.smooth_l1_loss(q_a, targets)
+    # Multiply Importance Sampling weights to loss
+    loss = F.mse_loss(q_a, targets)
     
     if l2_penalty > 0:
         # penalize L2 norm of RNN's activations
@@ -72,9 +72,10 @@ def prev_action_wrapper(obs, a, k):
         ac[a] = 1.
     return np.hstack([obs, ac])
 
-def beron_wrapper(obs):
-    assert len(obs) == 4 # null, rew, aL, aR
-    new_obs = np.zeros(4)
+def beron_wrapper(obs, k):
+    assert len(obs) == 4 # isi, rew, aL, aR
+    new_obs = np.zeros(k)
+    new_obs[-1] = obs[0] # copy initial input to end
     if obs[1] == 1 and obs[2] == 1:
         new_obs[0] = 1. # A
     elif obs[1] == 0 and obs[3] == 1:
@@ -83,10 +84,11 @@ def beron_wrapper(obs):
         new_obs[2] = 1. # a
     elif obs[1] == 1 and obs[3] == 1:
         new_obs[3] = 1. # B
-    return new_obs # A, b, a, B
+    return new_obs # A, b, a, B, isi
 
 def probe_model(model, env, nepisodes, ntrials_per_episode, behavior_policy=None,
-                epsilon=0, tau=tol, include_prev_reward=True, include_prev_action=True, include_beron_wrapper=False):
+                epsilon=0, tau=tol,
+                include_prev_reward=True, include_prev_action=True, include_beron_wrapper=False):
     
     trials = []
     with torch.no_grad():
@@ -104,7 +106,7 @@ def probe_model(model, env, nepisodes, ntrials_per_episode, behavior_policy=None
                 if include_prev_action:
                     obs = prev_action_wrapper(obs, a, env.action_space.n)
                 if include_beron_wrapper:
-                    obs = beron_wrapper(obs)
+                    obs = beron_wrapper(obs, model.input_size)
                 done = False
                 
                 if hasattr(env, 'iti'):
@@ -130,7 +132,7 @@ def probe_model(model, env, nepisodes, ntrials_per_episode, behavior_policy=None
                     if include_prev_action:
                         obs_next = prev_action_wrapper(obs_next, a, env.action_space.n)
                     if include_beron_wrapper:
-                        obs_next = beron_wrapper(obs_next)
+                        obs_next = beron_wrapper(obs_next, model.input_size)
 
                     # save
                     trial.update(obs, a, r, h.numpy(), q.numpy(), info.get('state', None))

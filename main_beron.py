@@ -6,7 +6,7 @@ import json
 import numpy as np
 import torch
 from model import DRQN
-from tasks.beron2022 import Beron2022_TrialLevel
+from tasks.beron2022 import Beron2022, Beron2022_TrialLevel
 from train import probe_model
 from analyze import add_beliefs_beron2022
 from analysis.correlations import analyze
@@ -58,9 +58,20 @@ run_name = 'h2_2023-07-21-14-33-29-841107'
 run_name = 'h2_2023-07-21-14-57-55-870084' # random policy all thru training
 run_name = 'h3_beronwrap'
 run_name = 'h2_beronwrap'
+run_name = 'h2_beronwrap_rand'
+run_name = 'h2_beronwraprnn'
+run_name = 'h2_beronnogamma'
+run_name = 'h2_beronp1'
+run_name = 'h2_beronp1v2'
+run_name = 'h2_beronp1v3'
+run_name = 'h2_beronnew'
+run_name = 'h2_beronp1switch'
+run_name = 'h3_berontime'
+run_name = 'h3_berontime2'
+run_name = 'h2_berontime3'
 
 args = json.load(open('data/models/results_{}.json'.format(run_name)))
-env_params = {'p_rew_max': args.get('p_reward_max', 0.8)}
+env_params = {'p_rew_max': args.get('p_reward_max', 0.8), 'p_switch': args.get('p_switch', 0.02)}
 hidden_size = args['hidden_size']
 input_size = 4
 modelfile = args['filenames']['weightsfile_final']
@@ -71,15 +82,21 @@ epsilon = 0; tau = None
 # tau = 0.00001; epsilon = None
 nepisodes = 1; ntrials_per_episode = 1000
 
-env = Beron2022_TrialLevel(**env_params)
+if args['experiment'] == 'beron2022_time':
+    env = Beron2022(**env_params)
+    input_size += args.get('include_beron_wrapper', False)
+else:
+    env = Beron2022_TrialLevel(**env_params)
 model = DRQN(input_size=input_size, # empty + prev reward + prev actions
                 hidden_size=hidden_size,
-                output_size=env.action_space.n).to(device)
+                output_size=env.action_space.n,
+                recurrent_cell=args.get('recurrent_cell', 'gru')).to(device)
 model.load_weights_from_path(modelfile)
 
 behavior_policy = DRQN(input_size=input_size, # empty + prev reward + prev actions
                 hidden_size=hidden_size,
-                output_size=env.action_space.n).to(device)
+                output_size=env.action_space.n,
+                recurrent_cell=args.get('recurrent_cell', 'gru')).to(device)
 behavior_policy.load_weights_from_path(initial_modelfile)
 behavior_policy = None
 
@@ -104,8 +121,8 @@ for useRandomModel in [True, False]:
         trials = probe_model(model, env, behavior_policy=behavior_policy,
                                 epsilon=epsilon, tau=tau,
                                 nepisodes=nepisodes, ntrials_per_episode=ntrials_per_episode,
-                                include_beron_wrapper=args['include_beron_wrapper'])
-        print(useRandomModel, name, np.hstack([trial.R for trial in trials]).mean())
+                                include_beron_wrapper=args.get('include_beron_wrapper', False))
+        print(useRandomModel, name, np.round(np.hstack([trial.R for trial in trials]).mean(),3))
 
         # add beliefs
         add_beliefs_beron2022(trials, env.p_rew_max, env.p_switch)
@@ -125,15 +142,10 @@ from matplotlib.patches import Rectangle
 plt.figure(figsize=(9,1.5))
 
 trials = Trials['test']
-# env.reset(seed=seed); model.reset_rng(seed+1); env.state = None
-# trials = probe_model(model, env, nepisodes=1, ntrials_per_episode=1000, epsilon=0.05)
-# add_beliefs_beron2022(trials, env.p_rew_max, env.p_switch)
-# trials = [trial for trial in trials if trial.index_in_episode > 3]
-
-S = np.vstack([trial.S for trial in trials])[:,0]
-A = np.vstack([trial.A for trial in trials])[:,0]
-R = np.vstack([trial.R for trial in trials])[:,0]
-B = np.vstack([trial.B for trial in trials])[:,0]
+S = np.hstack([trial.S[-1] for trial in trials])
+A = np.hstack([trial.A[-1] for trial in trials])
+R = np.hstack([trial.R[-1] for trial in trials])
+B = np.hstack([trial.B[-1] for trial in trials])
 xs = np.arange(len(S))
 
 switchInds = np.hstack([0, np.where(np.diff(S) != 0)[0] + 1, len(S)+1])
@@ -161,16 +173,16 @@ trials = Trials['test']
 # add_beliefs_beron2022(trials, env.p_rew_max, env.p_switch)
 # trials = [trial for trial in trials if trial.index_in_episode > 3]
 
-S = np.vstack([trial.S for trial in trials])[:,0]
+S = np.hstack([trial.S[-1] for trial in trials])
 switchInds = np.hstack([0, np.where(np.diff(S) != 0)[0] + 1, len(S)+1])
 
 plt.figure(figsize=(6,2))
 for showHighPort in [True, False]:
     plt.subplot(1,2,-int(showHighPort)+2)
     if showHighPort:
-        A = np.vstack([trial.S == trial.A for trial in trials])[:,0]
+        A = np.hstack([trial.S[-1] == trial.A[-1] for trial in trials])
     else:
-        A = np.hstack([False, np.vstack([trials[t+1].A != trials[t].A for t in range(len(trials)-1)])[:,0]])
+        A = np.hstack([False, np.hstack([trials[t+1].A[-1] != trials[t].A[-1] for t in range(len(trials)-1)])])
 
     As = []
     for i in range(len(switchInds)-1):
@@ -227,14 +239,11 @@ def toWord(seq):
         assert False
 
 trials = Trials['test']
-trials = probe_model(model, env, nepisodes=50, ntrials_per_episode=1000, epsilon=0.01)
 
-symbs = [toSymbol(trial.A[0], trial.R[0]) for trial in trials]
+symbs = [toSymbol(trial.A[-1], trial.R[-1]) for trial in trials]
 switches = []
 for i in range(len(trials)-4):
     ctrials = trials[i:(i+4)]
-    if any([trial.index_in_episode <= 3 for trial in ctrials]):
-        continue
     if len(set([trial.episode_index for trial in ctrials])) > 1:
         continue
     cur = (toWord(''.join(symbs[i:(i+3)])), trials[i+4].A[0] != trials[i+3].A[0])
@@ -262,6 +271,16 @@ plt.xlim([-1, xs.max()+1])
 plt.xlabel('history')
 plt.ylabel('P(switch)')
 
+#%% accuracy
+
+trials = Trials['test']
+X = np.where(np.vstack([trial.X[0] for trial in trials]))[1]
+R = np.vstack([trial.R[-1] for trial in trials])[:,0]
+Q = np.vstack([trial.Q[-1] for trial in trials])
+
+for x in np.unique(X):
+    print('O={}, p(O)={:0.3f}, r={:0.3f}, Q={}'.format(x, np.mean(X==x), R[X==x].mean(), np.round(Q[X==x].mean(axis=0),3)))
+
 #%% compare beliefs and latent activity
 
 results_rand = analyze(Trials_rand, key='Z')
@@ -278,22 +297,20 @@ plt.ylim([-0.05,1.05])
 #%% plot belief predictions over trials
 
 trials = Trials['test']
-S = np.vstack([trial.S for trial in trials])[:,0]
-# A = np.vstack([trial.A for trial in trials])[:,0]
-# R = np.vstack([trial.R for trial in trials])[:,0]
-B = np.vstack([trial.B for trial in trials])[:,0]
-Bhat = np.vstack([trial.Bhat for trial in trials])
-Q = np.vstack([trial.Q for trial in trials])
+S = np.hstack([trial.S[-1] for trial in trials])
+B = np.vstack([trial.B[-1] for trial in trials])
+Bhat = np.vstack([trial.Bhat[-1] for trial in trials])
+Q = np.vstack([trial.Q[-1] for trial in trials])
 Qdiff = Q[:,1] - Q[:,0]; Qdiff /= np.abs(Qdiff).max(); Qdiff /= 2; Qdiff += 0.5
 
 from matplotlib.patches import Rectangle
 
 plt.figure(figsize=(9,1.5))
-xs = np.arange(len(trials))
+xs = np.arange(len(S))
 
-S = np.vstack([trial.S for trial in trials])[:,0]
-A = np.vstack([trial.A for trial in trials])[:,0]
-R = np.vstack([trial.R for trial in trials])[:,0]
+S = np.hstack([trial.S[-1] for trial in trials])
+A = np.hstack([trial.A[-1] for trial in trials])
+R = np.hstack([trial.R[-1] for trial in trials])
 
 switchInds = np.hstack([0, np.where(np.diff(S) != 0)[0] + 1, len(S)+1])
 for i in range(len(switchInds)-1):
@@ -320,45 +337,69 @@ plt.ylabel('Belief')
 plt.xticks([0,0.5,1]); plt.yticks([0,0.5,1])
 plt.legend(fontsize=9)
 
-#%% visualize activity
+#%% visualize within-trial activity
 
 from analysis.pca import fit_pca, apply_pca
+if '_time' not in args['experiment']:
+    raise Exception("Not a relevant analysis for this type of environment.")
 
-pca = fit_pca(Trials['train'][10:])
-trials = apply_pca(Trials['test'][10:], pca)
+showPCs = True
+showQ = False
 
-Z = np.vstack([trial.Z_pc for trial in trials])
-# Z = np.vstack([trial.Z for trial in trials])
-# Z = np.vstack([trial.Q for trial in trials])
+pca = fit_pca(Trials['train'])
+trials = apply_pca(Trials['test'], pca)
+if showQ:
+    pca.transform = lambda z: (z @ model.output.weight.detach().numpy().T) + model.output.bias.detach().numpy()
+    lbl = 'Q'
+elif not showPCs:
+    pca.transform = lambda z: z
+    lbl = 'Z'
+else:
+    lbl = 'Z'
 
-S = np.vstack([trial.S for trial in trials])[:,0]
-A = np.vstack([trial.A for trial in trials])[:,0]
-R = np.vstack([trial.R for trial in trials])[:,0]
+X = np.vstack([trial.X for trial in trials])
+Z = np.vstack([trial.Z for trial in trials])
+Zpc = pca.transform(Z)
 
-switchInds = np.hstack([0, np.where(np.diff(S) != 0)[0] + 1, len(S)+1])
-for i in range(len(switchInds)-1):
-    x1 = switchInds[i]
-    x2 = switchInds[i+1]
-    if x2 - x1 < 10:
-        continue
-    zc = Z[x1:x2]
-    if S[x1] == 1:
-        color = 'b'
+switchTrials = [t for t in range(len(trials)-1) if trials[t].S[0] != trials[t+1].S[0]]
+switchTrial = switchTrials[1]
+trials = trials[switchTrial:switchTrial+10]
+alpha = 0.5
+
+plt.figure(figsize=(3,3))
+plt.plot(Zpc[:,0], Zpc[:,1], 'k.', markersize=1, alpha=0.1, zorder=-1)
+for trial in trials:
+    zpc = pca.transform(trial.Z)
+    # if trial.R[-1] != 1:
+    #     continue
+    if trial.S[-1] == 0:
+        color1 = 'c'
+        color2 = 'b'
     else:
-        color = 'r'
-    plt.plot(zc[0,0], zc[0,1], '+', markersize=5, color=color, zorder=1)
-    plt.plot(zc[:,0], zc[:,1], '.-', markersize=1, linewidth=1, color=color, alpha=0.2, zorder=0)
-    plt.plot(zc[-1,0], zc[-1,1], 'v', markersize=5, color=color, zorder=1)
+        color1 = 'orange'
+        color2 = 'r'
+    plt.plot(zpc[0,0], zpc[0,1], '+', color=color1, linewidth=1, markersize=5, alpha=alpha, zorder=0)
+    plt.plot(zpc[-1,0], zpc[-1,1], '.', color=color2, linewidth=1, markersize=2, alpha=alpha, zorder=1)
+    plt.plot(zpc[:,0], zpc[:,1], '-', color=color2, linewidth=1, alpha=alpha, zorder=0)
+plt.tight_layout()
+
+if showQ:
+    plt.axis('equal')
+    plt.plot(plt.xlim(), plt.xlim(), 'k-', alpha=0.5, linewidth=1, zorder=-1)
+plt.xlabel('${}_1$'.format(lbl))
+plt.ylabel('${}_2$'.format(lbl))
 
 #%% assess RNN responses to fixed inputs
 
 from analysis.pca import fit_pca, apply_pca
+if '_time' in args['experiment']:
+    raise Exception("Not a relevant analysis for this type of environment.")
 
 ninits = 100
 niters = 100
 showPCs = True
 showFPs = True
-showQ = False
+showQ = True
 
 pca = fit_pca(Trials['train'])
 if showQ:
@@ -427,7 +468,8 @@ for sign in [0,1,2,3]:#,4,5]:
         fps = []
         for i in range(ninits):
             zinit = np.random.rand(model.hidden_size)*(zmax-zmin) + zmin
-            zinit = Z[np.random.choice(len(Z))] + (np.random.rand(model.hidden_size)-0.5)
+            zinit = Z[np.random.choice(len(Z))] + 0.0*(np.random.rand(model.hidden_size)-0.5)
+            zi = pca.transform(zinit[None,:]); plt.plot(zi[:,0], zi[:,1], '.', markersize=1, alpha=0.2)
 
             h = torch.Tensor(zinit)[None,None,:]
             zs = []
@@ -437,18 +479,18 @@ for sign in [0,1,2,3]:#,4,5]:
                 zs.append(h.detach().numpy().flatten())
             zs = np.vstack(zs)
 
-            # if sign == 0:
-            #     v = zs[1]-zs[0]
-            #     z0 = pca.transform(np.vstack([zs[0], zs[0] + 0.5*v]))#/np.linalg.norm(v)]))
-            #     plt.plot([z0[0,0], z0[1,0]], [z0[0,1], z0[1,1]], 'k-', linewidth=1, alpha=0.2)
-            #     plt.plot(z0[1,0], z0[1,1], 'k.', markersize=1, alpha=0.2)
+            if False:#sign <= 0:
+                v = zs[1]-zs[0]
+                z0 = pca.transform(np.vstack([zs[0], zs[0] + 1*v]))#/np.linalg.norm(v)]))
+                plt.plot([z0[0,0], z0[1,0]], [z0[0,1], z0[1,1]], '-', color='k' if sign==0 else 'r', linewidth=1, alpha=0.2)
+                plt.plot(z0[1,0], z0[1,1], 'k.', markersize=1, alpha=0.2)
             fps.append(zs[-1])
         
         fps = pca.transform(np.vstack(fps))
         h = plt.plot(fps[:,0], fps[:,1], '+', color=hf[0].get_color(), markersize=5, linewidth=1, label=name)
 
-plt.axis('equal')
 if showQ:
+    plt.axis('equal')
     plt.plot(plt.xlim(), plt.xlim(), 'k-', alpha=0.5, linewidth=1, zorder=-1)
 plt.xlabel('${}_1$'.format(lbl))
 plt.ylabel('${}_2$'.format(lbl))
@@ -527,7 +569,8 @@ if True:#'rnn_features' not in vars() or 'train' not in rnn_features:
     rnn_features = {}
     for name in ['train', 'test']:
         # trials = Trials[name]
-        trials = probe_model(model, env, nepisodes=1, ntrials_per_episode=10000, epsilon=0.0)
+        trials = probe_model(model, env, nepisodes=1, ntrials_per_episode=10000, epsilon=0.0,
+                             include_beron_wrapper=args['include_beron_wrapper'])
         A = np.vstack([trial.A for trial in trials])[:,0]
         R = np.vstack([trial.R for trial in trials])[:,0]
         rnn_features[name] = [[A,R]]
@@ -565,3 +608,36 @@ plt.ylabel('weight')
 plt.title('LL={:0.3f}'.format(np.mean(lls)))
 plt.show()
 print('ll: {:0.3f}'.format(np.mean(lls)))
+
+#%% get Q weights using Least Squares (note: valid only when p_rew_max=1)
+
+from analyze import lsql
+from train import prev_reward_wrapper, prev_action_wrapper, beron_wrapper
+
+env = Beron2022_TrialLevel(p_rew_max=1, p_switch=0.1)
+r = 0
+a = None
+obs = np.array([env.reset(seed=555)[0]])
+
+trials = []
+for i in range(1000):
+    obs = np.array([env.reset()[0]])
+    obs = prev_reward_wrapper(obs, r)
+    obs = prev_action_wrapper(obs, a, env.action_space.n)
+    obs = beron_wrapper(obs)
+
+    a = int(np.random.rand() < 0.5)
+
+    next_obs, r, done, truncated, info = env.step(a)
+    next_obs = prev_reward_wrapper(next_obs, r)
+    next_obs = prev_action_wrapper(next_obs, a, env.action_space.n)
+    next_obs = beron_wrapper(next_obs)
+
+    if i > 0:
+        trials.append((np.where(obs)[0][0], a, r, np.where(next_obs)[0][0]))
+    obs = next_obs
+
+w = lsql(trials, gamma=0)
+print(np.round(w,3)) # A, b, a, B
+
+# %%
