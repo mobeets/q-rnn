@@ -9,7 +9,7 @@ from model import DRQN
 from tasks.beron2022 import Beron2022, Beron2022_TrialLevel
 from train import probe_model
 from analyze import add_beliefs_beron2022
-from analysis.correlations import analyze
+from analysis.correlations import analyze, rsq
 device = torch.device('cpu')
 
 import matplotlib.pyplot as plt
@@ -72,9 +72,16 @@ run_name = 'h2_berontime3'
 run_name = 'h3_berontime4'
 run_name = 'h3_berontime5'
 # run_name = 'h3_berontimep1'
+run_name = 'h3_berontime6'
+run_name = 'h3_berontime7'
 
 args = json.load(open('data/models/results_{}.json'.format(run_name)))
-env_params = {'p_rew_max': args.get('p_reward_max', 0.8), 'p_switch': args.get('p_switch', 0.02)}
+env_params = {
+    'p_rew_max': args.get('p_reward_max', 0.8),
+    'p_switch': args.get('p_switch', 0.02),
+    'iti_min': args.get('iti_min', 0), 'iti_p': args.get('iti_p', 0.5), 
+    'abort_penalty': args.get('abort_penalty', 0),
+    'include_null_action': args.get('abort_penalty', 0) < 0}
 hidden_size = args['hidden_size']
 modelfile = args['filenames']['weightsfile_final']
 initial_modelfile = args['filenames']['weightsfile_initial']
@@ -84,12 +91,13 @@ epsilon = 0; tau = None
 # tau = 0.00001; epsilon = None
 nepisodes = 1; ntrials_per_episode = 1000
 
-input_size = 4
 if args['experiment'] == 'beron2022_time':
     env = Beron2022(**env_params)
-    input_size += args.get('include_beron_wrapper', False)
 else:
     env = Beron2022_TrialLevel(**env_params)
+input_size = 1 + args['include_prev_reward'] + args['include_prev_action']*env.action_space.n
+if args['experiment'] == 'beron2022_time':
+    input_size += args.get('include_beron_wrapper', False)
 model = DRQN(input_size=input_size, # empty + prev reward + prev actions
                 hidden_size=hidden_size,
                 output_size=env.action_space.n,
@@ -130,6 +138,9 @@ for useRandomModel in [True, False]:
 
         # add beliefs
         add_beliefs_beron2022(trials, env.p_rew_max, env.p_switch)
+        ymx = np.max(np.abs(np.hstack([trial.Q[:,1]-trial.Q[:,0] for trial in trials])))
+        for trial in trials:
+            trial.Qdiff = (trial.Q[:,1] - trial.Q[:,0])[:,None]/ymx
         
         # discard trials at the beginning of episodes (warmup)
         trials = [trial for trial in trials if trial.index_in_episode > 5]
@@ -294,12 +305,14 @@ for x in np.unique(X, axis=0):
 results_rand = analyze(Trials_rand, key='Z')
 # print(results_rand['rsq'])
 results = analyze(Trials, key='Z')
+resq = analyze(Trials, key='Qdiff')
 # print(results['rsq'])
 
+ys = [results_rand['rsq'], results['rsq'], resq['rsq']]
 plt.figure(figsize=(1,2))
-plt.plot([1,2], [results_rand['rsq'], results['rsq']], 'ko')
-plt.xlim([0.5, 2.5])
-plt.xticks(ticks=[1,2], labels=['Untrained\nRQN', 'RQN'], rotation=90)
+plt.plot(range(len(ys)), ys, 'ko')
+plt.xlim([-0.5, len(ys)-0.5])
+plt.xticks(ticks=range(len(ys)), labels=['Untrained\nRQN', 'RQN', 'RQN-ΔQ'], rotation=90)
 plt.ylim([-0.05,1.05])
 
 #%% plot belief predictions over trials
@@ -307,9 +320,11 @@ plt.ylim([-0.05,1.05])
 trials = Trials['test']
 S = np.hstack([trial.S[-1] for trial in trials])
 B = np.vstack([trial.B[-1] for trial in trials])
-Bhat = np.vstack([trial.Bhat[-1] for trial in trials])
-Q = np.vstack([trial.Q[-1] for trial in trials])
-Qdiff = Q[:,1] - Q[:,0]; Qdiff /= np.abs(Qdiff).max(); Qdiff /= 2; Qdiff += 0.5
+Bhat = np.vstack([trial.Bhat_Z[-1] for trial in trials])
+Bhat_Q = np.vstack([trial.Bhat_Qdiff[-1] for trial in trials])
+
+rsq1 = rsq(B, Bhat); rsq2 = rsq(B, Bhat_Q)
+print('Bhat r^2: {:0.2f}, Qdiff r^2: {:0.2f}'.format(rsq1, rsq2))
 
 from matplotlib.patches import Rectangle
 
@@ -330,7 +345,7 @@ for i in range(len(switchInds)-1):
 
 plt.plot(xs, B, 'k-', linewidth=1, label='Beliefs')
 plt.plot(xs, Bhat, 'r-', linewidth=1, alpha=0.6, label='$\widehat{B}$')
-plt.plot(xs, Qdiff, 'b-', linewidth=1, alpha=0.6, label='$\Delta Q$')
+plt.plot(xs, Bhat_Q, 'b-', linewidth=1, alpha=0.6, label='$\Delta Q$')
 plt.yticks(ticks=[0,1], labels=['left', 'right'])
 plt.xlabel('Trial')
 plt.xlim(0 + np.array([0, 140.5]))
@@ -339,7 +354,7 @@ plt.legend(fontsize=9)
 #%% compare belief predictions
 
 plt.plot(Bhat, B, 'r.', markersize=5, alpha=0.6, label='$\widehat{B}$')
-plt.plot(Qdiff, B, 'b.', markersize=5, alpha=0.6, label='$\Delta Q$')
+plt.plot(Bhat_Q, B, 'b.', markersize=5, alpha=0.6, label='$\Delta Q$')
 plt.xlabel('Belief prediction')
 plt.ylabel('Belief')
 plt.xticks([0,0.5,1]); plt.yticks([0,0.5,1])
@@ -377,7 +392,7 @@ zmax = Z.max()+0.01
 
 switchTrials = [t for t in range(len(trials)-1) if trials[t].S[0] != trials[t+1].S[0]]
 switchTrial = switchTrials[1]
-trials = trials[switchTrial-1:switchTrial+10]
+trials = trials[switchTrial:switchTrial+20]
 alpha = 0.5
 
 plt.figure(figsize=(3,3))
@@ -602,11 +617,11 @@ from analysis.decoding_beron import fit_logreg_policy, compute_logreg_probs
 if True:#'rnn_features' not in vars() or 'train' not in rnn_features:
     rnn_features = {}
     for name in ['train', 'test']:
-        # trials = Trials[name]
-        trials = probe_model(model, env, nepisodes=1, ntrials_per_episode=10000, epsilon=0.0,
-                             include_beron_wrapper=args['include_beron_wrapper'])
-        A = np.vstack([trial.A for trial in trials])[:,0]
-        R = np.vstack([trial.R for trial in trials])[:,0]
+        trials = Trials[name]
+        # trials = probe_model(model, env, nepisodes=1, ntrials_per_episode=10000, epsilon=0.0,
+        #                      include_beron_wrapper=args['include_beron_wrapper'])
+        A = np.hstack([trial.A[-1] for trial in trials])
+        R = np.hstack([trial.R[-1] for trial in trials])
         rnn_features[name] = [[A,R]]
 
 pm1 = lambda x: 2 * x - 1

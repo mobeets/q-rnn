@@ -64,7 +64,7 @@ def get_filenames(args):
 
 def balance_model_to_explore_actions(model, env, args):
     # run on an episode, then adjust the mean Q value so that actions are equally likely
-    model.output.bias = torch.nn.Parameter(torch.zeros(2))
+    model.output.bias = torch.nn.Parameter(torch.zeros(model.output_size))
     trials = probe_model(model, env, 1, args.ntrials_per_episode,
                         epsilon=1, # random policy
                         include_prev_reward=args.include_prev_reward,

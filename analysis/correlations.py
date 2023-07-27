@@ -39,6 +39,11 @@ def linreg_fit(X, Y, scale=False, add_bias=True):
     Yhat = Z @ W
     return {'W': W, 'scaler': scaler, 'scale': scale, 'add_bias': add_bias}
 
+def rsq(Y, Yhat):
+    top = Yhat - Y
+    bot = Y - Y.mean(axis=0)[None,:]
+    return 1 - np.diag(top.T @ top).sum()/np.diag(bot.T @ bot).sum()
+
 def linreg_eval(X, Y, mdl):
     if mdl['scaler']:
         X = mdl['scaler'].transform(X)
@@ -49,10 +54,7 @@ def linreg_eval(X, Y, mdl):
     Yhat = Z @ mdl['W']
     
     # get r-squared
-    top = Yhat - Y
-    bot = Y - Y.mean(axis=0)[None,:]
-    rsq = 1 - np.diag(top.T @ top).sum()/np.diag(bot.T @ bot).sum()
-    return {'Yhat': Yhat, 'rsq': rsq}
+    return {'Yhat': Yhat, 'rsq': rsq(Y, Yhat)}
 
 #%% BELIEF R-SQUARED
 
@@ -70,7 +72,7 @@ def add_and_score_belief_prediction(trials, belief_weights, key='Z'):
     Yhat = res['Yhat']
     i = 0
     for trial in trials:
-        trial.Bhat = Yhat[i:(i+trial.trial_length)]
+        trial.__dict__['Bhat_' + key] = Yhat[i:(i+trial.trial_length)]
         i += trial.trial_length
     return res['rsq']
 

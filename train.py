@@ -73,7 +73,7 @@ def prev_action_wrapper(obs, a, k):
     return np.hstack([obs, ac])
 
 def beron_wrapper(obs, k):
-    assert len(obs) == 4 # isi, rew, aL, aR
+    assert len(obs) in [4,5] # isi, rew, aL, aR, aWait[optional]
     new_obs = np.zeros(k)
     new_obs[-1] = obs[0] # copy initial input to end
     if obs[1] == 1 and obs[2] == 1:
@@ -84,7 +84,12 @@ def beron_wrapper(obs, k):
         new_obs[2] = 1. # a
     elif obs[1] == 1 and obs[3] == 1:
         new_obs[3] = 1. # B
-    return new_obs # A, b, a, B, isi
+    elif len(obs) == 5 and obs[4] == 1:
+        assert k == 6
+        new_obs[4] = 1. # wait
+    else:
+        assert obs[:-1].sum() == 0
+    return new_obs # A, b, a, B, wait[optional], isi
 
 def beron_censor(obs, include_beron_wrapper):
     if include_beron_wrapper:
