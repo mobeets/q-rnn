@@ -6,12 +6,17 @@ from tasks.trial import get_itis
 
 class Beron2022(gym.Env):
     def __init__(self, p_rew_max=0.8, p_switch=0.02,
-                 iti_min=0, iti_p=0.25, iti_max=0, iti_dist='geometric'):
+                 iti_min=0, iti_p=0.25, iti_max=0, iti_dist='geometric',
+                 include_null_action=False, abort_penalty=0):
         self.observation_space = spaces.Discrete(1) # 0 every time
-        self.action_space = spaces.Discrete(2) # left or right port
+        self.action_space = spaces.Discrete(2 + include_null_action) # left port, right port, null [optional]
+        self.include_null_action = include_null_action
         self.p_rew_max = p_rew_max # max prob of reward; should be in [0.5, 1.0]
         self.p_switch = p_switch # prob. of state change each trial
         self.state = None # if left (0) or right (1) port has higher reward prob
+        self.abort_penalty = abort_penalty # penalty for acting during ITI (if include_null_action==True)
+        if not self.include_null_action and self.abort_penalty != 0:
+            raise Exception("Cannot provide a nonzero abort penalty if there is no null action")
 
         self.iti_min = iti_min
         self.iti_max = iti_max # n.b. only used if iti_dist == 'uniform'
@@ -45,12 +50,18 @@ class Beron2022(gym.Env):
         reward probability is determined by whether agent chose the high port
         """
         if self.t < self.iti:
-            return 0
-        if state == action:
-            p_reward = self.p_rew_max
-        else:
-            p_reward = 1-self.p_rew_max
-        return int(self.rng_reward.random() < p_reward)
+            if action == 2:
+                return self.abort_penalty
+            else:
+                return 0
+        elif action == 2: # no decision yet
+            return 0 
+        else: # decision report
+            if state == action:
+                p_reward = self.p_rew_max
+            elif action < 2:
+                p_reward = 1-self.p_rew_max
+            return int(self.rng_reward.random() < p_reward)
 
     def reset(self, seed=None, options=None):
         """

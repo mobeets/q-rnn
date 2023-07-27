@@ -12,7 +12,7 @@ import torch.optim as optim
 device = torch.device('cpu')
 
 from model import DRQN
-from train import train, probe_model, prev_action_wrapper, prev_reward_wrapper, beron_wrapper
+from train import train, probe_model, prev_action_wrapper, prev_reward_wrapper, beron_wrapper, beron_censor
 from replay import EpisodeMemory, EpisodeBuffer
 from tasks.roitman2002 import Roitman2002
 from tasks.beron2022 import Beron2022, Beron2022_TrialLevel
@@ -69,7 +69,8 @@ def balance_model_to_explore_actions(model, env, args):
                         epsilon=1, # random policy
                         include_prev_reward=args.include_prev_reward,
                         include_prev_action=args.include_prev_action,
-                        include_beron_wrapper=args.include_beron_wrapper)
+                        include_beron_wrapper=args.include_beron_wrapper,
+                        include_beron_censor=args.include_beron_censor)
     Q = np.vstack([x.Q for x in trials])
     model.output.bias = torch.nn.Parameter(torch.Tensor(-Q.mean(axis=0)))
 
@@ -82,7 +83,10 @@ def train_model(args):
         env_params = {'p_rew_max': args.p_reward_max, 'p_switch': args.p_switch}
         env = Beron2022_TrialLevel(**env_params)
     elif args.experiment == 'beron2022_time':
-        env_params = {'p_rew_max': args.p_reward_max, 'p_switch': args.p_switch}
+        env_params = {'p_rew_max': args.p_reward_max, 'p_switch': args.p_switch, 
+                      'iti_min': args.iti_min, 'iti_p': args.iti_p, 
+                      'abort_penalty': args.abort_penalty,
+                      'include_null_action': args.abort_penalty < 0}
         env = Beron2022(**env_params)
 
     # create models
@@ -156,6 +160,8 @@ def train_model(args):
                     obs_next = prev_action_wrapper(obs_next, a, env.action_space.n)
                 if args.include_beron_wrapper:
                     obs_next = beron_wrapper(obs_next, Q.input_size)
+                if args.include_beron_censor:
+                    obs_next = beron_censor(obs_next, args.include_beron_wrapper)
                     
                 # make data
                 episode_record.put([obs, a, r/100.0, obs_next, 0.0 if done else 1.0])
@@ -185,7 +191,8 @@ def train_model(args):
                              epsilon=0, # always evaluate with greedy policy
                              include_prev_reward=args.include_prev_reward,
                              include_prev_action=args.include_prev_action,
-                             include_beron_wrapper=args.include_beron_wrapper)
+                             include_beron_wrapper=args.include_beron_wrapper,
+                             include_beron_censor=args.include_beron_censor)
         cur_score = np.hstack([x.R for x in test_trials]).mean()
         scores.append(cur_score)
 
@@ -242,6 +249,12 @@ if __name__ == '__main__':
                         default=0.8, help='reward probability of best arm (beron2022 env only)')
     parser.add_argument('--p_switch', type=float,
                         default=0.02, help='switch probability of best arm (beron2022 env only)')
+    parser.add_argument('--abort_penalty', type=float,
+                        default=0.0, help='penalty for reporting decision during ITI')
+    parser.add_argument('--iti_p', type=float,
+                        default=0.5, help='iti_p')
+    parser.add_argument('--iti_min', type=int,
+                        default=0, help='iti_min')
     parser.add_argument('-k', '--hidden_size', type=int,
                         default=10, help='number of hidden units in the rnn')
     parser.add_argument('-b', '--batch_size', type=int,
@@ -265,6 +278,8 @@ if __name__ == '__main__':
     parser.add_argument('--include_prev_action', action='store_true',
                         default=False)
     parser.add_argument('--include_beron_wrapper', action='store_true',
+                        default=False)
+    parser.add_argument('--include_beron_censor', action='store_true',
                         default=False)
     args = parser.parse_args()
     if 'beron2022' in args.experiment:

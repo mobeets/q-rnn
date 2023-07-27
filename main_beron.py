@@ -69,19 +69,22 @@ run_name = 'h2_beronp1switch'
 run_name = 'h3_berontime'
 run_name = 'h3_berontime2'
 run_name = 'h2_berontime3'
+run_name = 'h3_berontime4'
+run_name = 'h3_berontime5'
+# run_name = 'h3_berontimep1'
 
 args = json.load(open('data/models/results_{}.json'.format(run_name)))
 env_params = {'p_rew_max': args.get('p_reward_max', 0.8), 'p_switch': args.get('p_switch', 0.02)}
 hidden_size = args['hidden_size']
-input_size = 4
 modelfile = args['filenames']['weightsfile_final']
 initial_modelfile = args['filenames']['weightsfile_initial']
-print('H={}, p={}'.format(hidden_size, env_params['p_rew_max']))
+print('H={}, prew={}, pswitch={}'.format(hidden_size, env_params['p_rew_max'], env_params['p_switch']))
 
 epsilon = 0; tau = None
 # tau = 0.00001; epsilon = None
 nepisodes = 1; ntrials_per_episode = 1000
 
+input_size = 4
 if args['experiment'] == 'beron2022_time':
     env = Beron2022(**env_params)
     input_size += args.get('include_beron_wrapper', False)
@@ -121,7 +124,8 @@ for useRandomModel in [True, False]:
         trials = probe_model(model, env, behavior_policy=behavior_policy,
                                 epsilon=epsilon, tau=tau,
                                 nepisodes=nepisodes, ntrials_per_episode=ntrials_per_episode,
-                                include_beron_wrapper=args.get('include_beron_wrapper', False))
+                                include_beron_wrapper=args.get('include_beron_wrapper', False),
+                                include_beron_censor=args.get('include_beron_censor', False))
         print(useRandomModel, name, np.round(np.hstack([trial.R for trial in trials]).mean(),3))
 
         # add beliefs
@@ -274,12 +278,16 @@ plt.ylabel('P(switch)')
 #%% accuracy
 
 trials = Trials['test']
-X = np.where(np.vstack([trial.X[0] for trial in trials]))[1]
+if args['include_beron_wrapper']:
+    X = np.where(np.vstack([trial.X[0] for trial in trials]))[1][:,None]
+else:
+    X = np.vstack([trial.X[0] for trial in trials])
 R = np.vstack([trial.R[-1] for trial in trials])[:,0]
 Q = np.vstack([trial.Q[-1] for trial in trials])
 
-for x in np.unique(X):
-    print('O={}, p(O)={:0.3f}, r={:0.3f}, Q={}'.format(x, np.mean(X==x), R[X==x].mean(), np.round(Q[X==x].mean(axis=0),3)))
+for x in np.unique(X, axis=0):
+    ix = np.all(X == x, axis=1)
+    print('O={}, p(O)={:0.3f}, r={:0.3f}, Q={}'.format(x, np.mean(ix), R[ix].mean(), np.round(Q[ix].mean(axis=0),3)))
 
 #%% compare beliefs and latent activity
 
@@ -343,8 +351,12 @@ from analysis.pca import fit_pca, apply_pca
 if '_time' not in args['experiment']:
     raise Exception("Not a relevant analysis for this type of environment.")
 
+ninits = 100
+niters = 100
+showFPs = True
+showTrials = True
 showPCs = True
-showQ = False
+showQ = True
 
 pca = fit_pca(Trials['train'])
 trials = apply_pca(Trials['test'], pca)
@@ -360,27 +372,49 @@ else:
 X = np.vstack([trial.X for trial in trials])
 Z = np.vstack([trial.Z for trial in trials])
 Zpc = pca.transform(Z)
+zmin = Z.min()-0.01
+zmax = Z.max()+0.01
 
 switchTrials = [t for t in range(len(trials)-1) if trials[t].S[0] != trials[t+1].S[0]]
 switchTrial = switchTrials[1]
-trials = trials[switchTrial:switchTrial+10]
+trials = trials[switchTrial-1:switchTrial+10]
 alpha = 0.5
 
 plt.figure(figsize=(3,3))
 plt.plot(Zpc[:,0], Zpc[:,1], 'k.', markersize=1, alpha=0.1, zorder=-1)
-for trial in trials:
-    zpc = pca.transform(trial.Z)
-    # if trial.R[-1] != 1:
-    #     continue
-    if trial.S[-1] == 0:
-        color1 = 'c'
-        color2 = 'b'
-    else:
-        color1 = 'orange'
-        color2 = 'r'
-    plt.plot(zpc[0,0], zpc[0,1], '+', color=color1, linewidth=1, markersize=5, alpha=alpha, zorder=0)
-    plt.plot(zpc[-1,0], zpc[-1,1], '.', color=color2, linewidth=1, markersize=2, alpha=alpha, zorder=1)
-    plt.plot(zpc[:,0], zpc[:,1], '-', color=color2, linewidth=1, alpha=alpha, zorder=0)
+
+if showFPs:
+    obs = np.zeros(model.input_size)
+    cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
+    fps = []
+    for i in range(ninits):
+        zinit = np.random.rand(model.hidden_size)*(zmax-zmin) + zmin
+        zinit = Z[np.random.choice(len(Z))] + 0.0*(np.random.rand(model.hidden_size)-0.5)
+        # zi = pca.transform(zinit[None,:]); plt.plot(zi[:,0], zi[:,1], '.', markersize=1, alpha=0.2)
+
+        h = torch.Tensor(zinit)[None,None,:]
+        zs = []
+        zs.append(h.detach().numpy().flatten())
+        for _ in range(niters):
+            a, (q, h) = model.sample_action(cobs, h.to(device), epsilon=0)
+            zs.append(h.detach().numpy().flatten())
+        zs = np.vstack(zs)
+        fps.append(zs[-1])
+
+    fps = pca.transform(np.vstack(fps))
+    h = plt.plot(fps[:,0], fps[:,1], '*', color='r', markersize=5, linewidth=1, label=name, zorder=10)
+
+if showTrials:
+    for trial in trials:
+        zpc = pca.transform(trial.Z)
+        if trial.S[-1] == 0:
+            color = 'b'
+        else:
+            color = 'r'
+        plt.plot(zpc[0,0], zpc[0,1], '+', color=color, linewidth=1, markersize=5, alpha=alpha, zorder=0)
+        plt.plot(zpc[:,0], zpc[:,1], '.-' if trial.R[-1] == 1 else '--',
+                 markersize=2,
+                 color=color, linewidth=1, alpha=alpha, zorder=0)
 plt.tight_layout()
 
 if showQ:

@@ -86,9 +86,17 @@ def beron_wrapper(obs, k):
         new_obs[3] = 1. # B
     return new_obs # A, b, a, B, isi
 
+def beron_censor(obs, include_beron_wrapper):
+    if include_beron_wrapper:
+        obs[:-1] = 0. # censor all but the isi indicator
+    else:
+        obs[1:] = 0. # censor all but the isi indicator
+    return obs
+
 def probe_model(model, env, nepisodes, ntrials_per_episode, behavior_policy=None,
                 epsilon=0, tau=tol,
-                include_prev_reward=True, include_prev_action=True, include_beron_wrapper=False):
+                include_prev_reward=True, include_prev_action=True,
+                include_beron_wrapper=False, include_beron_censor=False):
     
     trials = []
     with torch.no_grad():
@@ -133,6 +141,8 @@ def probe_model(model, env, nepisodes, ntrials_per_episode, behavior_policy=None
                         obs_next = prev_action_wrapper(obs_next, a, env.action_space.n)
                     if include_beron_wrapper:
                         obs_next = beron_wrapper(obs_next, model.input_size)
+                    if include_beron_censor:
+                        obs_next = beron_censor(obs_next, include_beron_wrapper)
 
                     # save
                     trial.update(obs, a, r, h.numpy(), q.numpy(), info.get('state', None))
