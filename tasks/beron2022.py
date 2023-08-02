@@ -55,9 +55,9 @@ class Beron2022(gym.Env):
         """
         if self.t < self.iti:
             if action == 2:
-                return self.abort_penalty
-            else:
                 return 0
+            else:
+                return self.abort_penalty
         elif action == 2: # no decision yet
             return 0 
         else: # decision report
@@ -191,7 +191,7 @@ class Beron2022_TrialLevel(gym.Env):
             self.state = int(self.state == 0) # 0 -> 1, and 1 -> 0
 
     def _get_info(self):
-        return {'state': self.state, 'trial_index': self.trial_index}
+        return {'state': self.state, 'trial_index': self.trial_index, 't': self.t}
 
     def _new_trial(self):
         self.trial_index += 1

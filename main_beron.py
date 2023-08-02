@@ -80,15 +80,13 @@ run_name = 'h3_brnlambda2'
 # run_name = 'h3_test'
 # run_name = 'h3_test2'
 # run_name = 'h3_berontime6'
+run_name = 'h3_test4a'
 
 ntrials = 1000
 args = json.load(open('data/models/results_{}.json'.format(run_name)))
 env_params = {
     'p_rew_max': args.get('p_reward_max', 0.8),
     'p_switch': args.get('p_switch', 0.02),
-    'iti_min': args.get('iti_min', 0), 'iti_p': args.get('iti_p', 0.5), 
-    'abort_penalty': args.get('abort_penalty', 0),
-    'include_null_action': args.get('abort_penalty', 0) < 0,
     'ntrials': ntrials}
 hidden_size = args['hidden_size']
 modelfile = args['filenames']['weightsfile_final']
@@ -97,6 +95,9 @@ print('H={}, prew={}, pswitch={}'.format(hidden_size, env_params['p_rew_max'], e
 epsilon = 0; tau = None
 
 if args['experiment'] == 'beron2022_time':
+    env_params.update({'iti_min': args.get('iti_min', 0), 'iti_p': args.get('iti_p', 0.5), 
+        'abort_penalty': args.get('abort_penalty', 0),
+        'include_null_action': args.get('abort_penalty', 0) < 0})
     env = Beron2022(**env_params)
 else:
     env = Beron2022_TrialLevel(**env_params)
@@ -165,13 +166,13 @@ for useRandomModel in [True, False]:
 
 #%%
 
-seed = 555
-# env.env.env.state = 1
-env.reset(seed=seed)
-model.reset_rng(seed+1)
-trials = probe_model(model, env, behavior_policy=None,
-                        epsilon=epsilon, tau=tau,
-                        nepisodes=1)
+# seed = 555
+# # env.env.env.state = 1
+# env.reset(seed=seed)
+# model.reset_rng(seed+1)
+# trials = probe_model(model, env, behavior_policy=None,
+#                         epsilon=epsilon, tau=tau,
+#                         nepisodes=1)
 
 #%% plot Fig. 1B from Beron et al. (2022)
 
