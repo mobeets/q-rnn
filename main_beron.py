@@ -6,7 +6,8 @@ import json
 import numpy as np
 import torch
 from model import DRQN
-from tasks.beron2022 import Beron2022, Beron2022_TrialLevel
+from tasks.beron2022 import Beron2022, Beron2022_TrialLevel, BeronCensorWrapper, BeronWrapper
+from tasks.wrappers import PreviousRewardWrapper, PreviousActionWrapper
 from train import probe_model
 from analyze import add_beliefs_beron2022
 from analysis.correlations import analyze, rsq
@@ -88,6 +89,9 @@ hidden_size = args['hidden_size']
 modelfile = args['filenames']['weightsfile_final']
 initial_modelfile = args['filenames']['weightsfile_initial']
 print('H={}, prew={}, pswitch={}'.format(hidden_size, env_params['p_rew_max'], env_params['p_switch']))
+input_size = 1 + args['include_prev_reward'] + args['include_prev_action']*env.action_space.n
+if args['experiment'] == 'beron2022_time':
+    input_size += args.get('include_beron_wrapper', False)
 
 epsilon = 0; tau = None
 # tau = 0.00001; epsilon = None
@@ -97,9 +101,15 @@ if args['experiment'] == 'beron2022_time':
     env = Beron2022(**env_params)
 else:
     env = Beron2022_TrialLevel(**env_params)
-input_size = 1 + args['include_prev_reward'] + args['include_prev_action']*env.action_space.n
-if args['experiment'] == 'beron2022_time':
-    input_size += args.get('include_beron_wrapper', False)
+if args.include_prev_reward:
+    env = PreviousRewardWrapper(env)
+if args.include_prev_action:
+    env = PreviousActionWrapper(env, env.action_space.n)
+if args.include_beron_wrapper:
+    env = BeronWrapper(env, input_size)
+if args.include_beron_censor:
+    env = BeronCensorWrapper(env, args['include_beron_wrapper'])
+
 model = DRQN(input_size=input_size, # empty + prev reward + prev actions
                 hidden_size=hidden_size,
                 output_size=env.action_space.n,
@@ -133,9 +143,7 @@ for useRandomModel in [True, False]:
         # run model on trials
         trials = probe_model(model, env, behavior_policy=behavior_policy,
                                 epsilon=epsilon, tau=tau,
-                                nepisodes=nepisodes, ntrials_per_episode=ntrials_per_episode,
-                                include_beron_wrapper=args.get('include_beron_wrapper', False),
-                                include_beron_censor=args.get('include_beron_censor', False))
+                                nepisodes=nepisodes, ntrials_per_episode=ntrials_per_episode)
         print(useRandomModel, name, np.round(np.hstack([trial.R for trial in trials]).mean(),3))
 
         # add beliefs
@@ -185,10 +193,6 @@ tBefore = 10
 tAfter = 20
 
 trials = Trials['test']
-# env.reset(seed=seed); model.reset_rng(seed+1); env.state = None
-# trials = probe_model(model, env, nepisodes=1, ntrials_per_episode=1000, epsilon=0.05)
-# add_beliefs_beron2022(trials, env.p_rew_max, env.p_switch)
-# trials = [trial for trial in trials if trial.index_in_episode > 3]
 
 S = np.hstack([trial.S[-1] for trial in trials])
 switchInds = np.hstack([0, np.where(np.diff(S) != 0)[0] + 1, len(S)+1])
@@ -620,8 +624,6 @@ if True:#'rnn_features' not in vars() or 'train' not in rnn_features:
     rnn_features = {}
     for name in ['train', 'test']:
         trials = Trials[name]
-        # trials = probe_model(model, env, nepisodes=1, ntrials_per_episode=10000, epsilon=0.0,
-        #                      include_beron_wrapper=args['include_beron_wrapper'])
         A = np.hstack([trial.A[-1] for trial in trials])
         R = np.hstack([trial.R[-1] for trial in trials])
         rnn_features[name] = [[A,R]]

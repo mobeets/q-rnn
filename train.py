@@ -70,10 +70,7 @@ def train(q_net=None, target_q_net=None, episode_memory=None,
     
     return loss/batch_size
 
-def probe_model(model, env, nepisodes, ntrials_per_episode, behavior_policy=None,
-                epsilon=0, tau=tol,
-                include_prev_reward=True, include_prev_action=True,
-                include_beron_wrapper=False, include_beron_censor=False):
+def probe_model(model, env, nepisodes, ntrials_per_episode, behavior_policy=None, epsilon=0, tau=tol):
     
     trials = []
     with torch.no_grad():

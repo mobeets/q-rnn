@@ -66,12 +66,7 @@ def get_filenames(args):
 def balance_model_to_explore_actions(model, env, args):
     # run on an episode, then adjust the mean Q value so that actions are equally likely
     model.output.bias = torch.nn.Parameter(torch.zeros(model.output_size))
-    trials = probe_model(model, env, 1, args.ntrials_per_episode,
-                        epsilon=1, # random policy
-                        include_prev_reward=args.include_prev_reward,
-                        include_prev_action=args.include_prev_action,
-                        include_beron_wrapper=args.include_beron_wrapper,
-                        include_beron_censor=args.include_beron_censor)
+    trials = probe_model(model, env, 1, args.ntrials_per_episode, epsilon=1) # random policy
     Q = np.vstack([x.Q for x in trials])
     model.output.bias = torch.nn.Parameter(torch.Tensor(-Q.mean(axis=0)))
 
@@ -183,12 +178,7 @@ def train_model(args):
             epsilon = max(eps_end, epsilon * eps_decay) # linear annealing on epsilon
 
         # evaluate model using greedy policy
-        test_trials = probe_model(Q, env, 1, args.ntrials_per_episode,
-                             epsilon=0, # always evaluate with greedy policy
-                             include_prev_reward=args.include_prev_reward,
-                             include_prev_action=args.include_prev_action,
-                             include_beron_wrapper=args.include_beron_wrapper,
-                             include_beron_censor=args.include_beron_censor)
+        test_trials = probe_model(Q, env, 1, args.ntrials_per_episode, epsilon=0)
         cur_score = np.hstack([x.R for x in test_trials]).mean()
         scores.append(cur_score)
 
