@@ -77,8 +77,11 @@ run_name = 'h3_berontime6'
 run_name = 'h3_berontime7'
 run_name = 'h3_brnlambda'
 run_name = 'h3_brnlambda2'
-run_name = 'h3_test2'
+# run_name = 'h3_test'
+# run_name = 'h3_test2'
+# run_name = 'h3_berontime6'
 
+ntrials = 1000
 args = json.load(open('data/models/results_{}.json'.format(run_name)))
 env_params = {
     'p_rew_max': args.get('p_reward_max', 0.8),
@@ -86,20 +89,22 @@ env_params = {
     'iti_min': args.get('iti_min', 0), 'iti_p': args.get('iti_p', 0.5), 
     'abort_penalty': args.get('abort_penalty', 0),
     'include_null_action': args.get('abort_penalty', 0) < 0,
-    'ntrials': 1000}
+    'ntrials': ntrials}
 hidden_size = args['hidden_size']
 modelfile = args['filenames']['weightsfile_final']
 initial_modelfile = args['filenames']['weightsfile_initial']
 print('H={}, prew={}, pswitch={}'.format(hidden_size, env_params['p_rew_max'], env_params['p_switch']))
-input_size = 1 + args['include_prev_reward'] + args['include_prev_action']*env.action_space.n
-if args['experiment'] == 'beron2022_time':
-    input_size += args.get('include_beron_wrapper', False)
 epsilon = 0; tau = None
 
 if args['experiment'] == 'beron2022_time':
     env = Beron2022(**env_params)
 else:
     env = Beron2022_TrialLevel(**env_params)
+
+input_size = 1 + args['include_prev_reward'] + args['include_prev_action']*env.action_space.n
+if args['experiment'] == 'beron2022_time':
+    input_size += args.get('include_beron_wrapper', False)
+
 if args['include_prev_reward']:
     env = PreviousRewardWrapper(env)
 if args['include_prev_action']:
@@ -157,6 +162,16 @@ for useRandomModel in [True, False]:
             Trials_rand[name] = trials
         else:
             Trials[name] = trials
+
+#%%
+
+seed = 555
+# env.env.env.state = 1
+env.reset(seed=seed)
+model.reset_rng(seed+1)
+trials = probe_model(model, env, behavior_policy=None,
+                        epsilon=epsilon, tau=tau,
+                        nepisodes=1)
 
 #%% plot Fig. 1B from Beron et al. (2022)
 

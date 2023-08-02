@@ -26,8 +26,8 @@ class PreviousActionWrapper(Wrapper):
     
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
-        new_obs = self.observation(obs)
         self.last_action = action
+        new_obs = self.observation(obs)
         return new_obs, reward, terminated, truncated, info
 
 class PreviousRewardWrapper(Wrapper):
@@ -50,8 +50,8 @@ class PreviousRewardWrapper(Wrapper):
     
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
-        new_obs = self.observation(obs)
         self.last_reward = reward
+        new_obs = self.observation(obs)
         return new_obs, reward, terminated, truncated, info
 
 class DelayWrapper(Wrapper):
@@ -70,7 +70,10 @@ class DelayWrapper(Wrapper):
         obs, reward, terminated, truncated, info = self.env.step(action)
 
         # update observation queue
-        cur_obs = self.last_obs.pop(0) # current obs, given delay
-        self.last_obs.append(obs)
+        if self.delay > 0:
+            cur_obs = self.last_obs.pop(0) # current obs, given delay
+            self.last_obs.append(obs)
+        else:
+            cur_obs = obs
 
         return cur_obs, reward, terminated, truncated, info

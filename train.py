@@ -97,8 +97,9 @@ def probe_model(model, env, nepisodes, behavior_policy=None, epsilon=0, tau=tol)
                     a, (_, hp) = behavior_policy.sample_action(cobs, hp.to(device), epsilon=epsilon, tau=tau)
 
                 # take action
-                obs_next, r, done, truncated, info = env.step(a)
-                new_trial = env.t == -1
+                obs_next, r, done, truncated, info_next = env.step(a)
+                new_trial = info_next['t'] == -1
+                # print(cobs, h, q, a, r, info['t'])
 
                 # save
                 trial.update(obs, a, r, h.numpy(), q.numpy(), info.get('state', None))
@@ -109,4 +110,5 @@ def probe_model(model, env, nepisodes, behavior_policy=None, epsilon=0, tau=tol)
                     else:
                         trial = Trial(state=None, index_in_episode=env.trial_index, episode_index=i)
                 obs = obs_next
+                info = info_next
     return trials

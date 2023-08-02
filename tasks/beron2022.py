@@ -1,6 +1,6 @@
 import gymnasium as gym
 from gymnasium import spaces
-from gymnasium import Wrapper, ObservationWrapper
+from gymnasium import ObservationWrapper
 import numpy as np
 from numpy.random import default_rng
 from tasks.trial import get_itis
@@ -109,33 +109,21 @@ class Beron2022(gym.Env):
         info = self._get_info()
         return observation, reward, done, False, info
 
-class BeronCensorWrapper(Wrapper):
+class BeronCensorWrapper(ObservationWrapper):
     """
     censors the previous action and reward during a trial
     """
     def __init__(self, env, include_beron_wrapper):
         super().__init__(env)
         self.include_beron_wrapper = include_beron_wrapper
-        self.tcur = 0
     
     def observation(self, obs):
-        if self.tcur >= 0:
+        if self.env.t >= 0:
             if self.include_beron_wrapper:
                 obs[:-1] = 0. # censor all but the isi indicator
             else:
                 obs[1:] = 0. # censor all but the isi indicator
         return obs
-    
-    def reset(self, **kwargs):
-        obs, info = self.env.reset(**kwargs)
-        self.tcur = info['t']
-        return self.observation(obs), info
-    
-    def step(self, action):
-        obs, reward, terminated, truncated, info = self.env.step(action)
-        new_obs = self.observation(obs)
-        self.tcur = info['t']
-        return new_obs, reward, terminated, truncated, info
 
 class BeronWrapper(ObservationWrapper):
     """
@@ -161,8 +149,6 @@ class BeronWrapper(ObservationWrapper):
         elif len(obs) == 5:
             assert self.k == 6
             new_obs[4] = obs[4] # wait
-        else:
-            assert False
         return new_obs # A, b, a, B, wait[optional], isi
 
 class Beron2022_TrialLevel(gym.Env):
