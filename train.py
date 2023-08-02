@@ -7,7 +7,8 @@ device = torch.device('cpu')
 tol = np.finfo('float').min
 
 def train(q_net=None, target_q_net=None, episode_memory=None,
-          device=None, optimizer=None, batch_size=1, gamma=0.99, l2_penalty=0):
+          device=None, optimizer=None, batch_size=1,
+          gamma=0.99, lmbda=0, l2_penalty=0):
 
     assert device is not None, "None Device input: device should be selected."
 
@@ -49,7 +50,7 @@ def train(q_net=None, target_q_net=None, episode_memory=None,
     q_out, h_out = q_net(observations, h.to(device))
     q_a = q_out.gather(2, actions)
 
-    # Multiply Importance Sampling weights to loss
+    # MSE loss
     loss = F.mse_loss(q_a, targets)
     
     if l2_penalty > 0:
@@ -57,46 +58,17 @@ def train(q_net=None, target_q_net=None, episode_memory=None,
         loss += l2_penalty * h_out.pow(2).sum(2).mean()
     
     # Update Network
-    optimizer.zero_grad()
+    if lmbda == 0:
+        optimizer.zero_grad()
+    else:
+        # TD(λ)
+        for p in q_net.parameters():
+            if p.grad is not None:
+                p.grad *= gamma*lmbda
     loss.backward()
     optimizer.step()
     
     return loss/batch_size
-
-def prev_reward_wrapper(obs, r):
-    return np.hstack([obs, [r]])
-
-def prev_action_wrapper(obs, a, k):
-    ac = np.zeros(k)
-    if a is not None:
-        ac[a] = 1.
-    return np.hstack([obs, ac])
-
-def beron_wrapper(obs, k):
-    assert len(obs) in [4,5] # isi, rew, aL, aR, aWait[optional]
-    new_obs = np.zeros(k)
-    new_obs[-1] = obs[0] # copy initial input to end
-    if obs[1] == 1 and obs[2] == 1:
-        new_obs[0] = 1. # A
-    elif obs[1] == 0 and obs[3] == 1:
-        new_obs[1] = 1. # b
-    elif obs[1] == 0 and obs[2] == 1:
-        new_obs[2] = 1. # a
-    elif obs[1] == 1 and obs[3] == 1:
-        new_obs[3] = 1. # B
-    elif len(obs) == 5 and obs[4] == 1:
-        assert k == 6
-        new_obs[4] = 1. # wait
-    else:
-        assert obs[:-1].sum() == 0
-    return new_obs # A, b, a, B, wait[optional], isi
-
-def beron_censor(obs, include_beron_wrapper):
-    if include_beron_wrapper:
-        obs[:-1] = 0. # censor all but the isi indicator
-    else:
-        obs[1:] = 0. # censor all but the isi indicator
-    return obs
 
 def probe_model(model, env, nepisodes, ntrials_per_episode, behavior_policy=None,
                 epsilon=0, tau=tol,
@@ -113,13 +85,7 @@ def probe_model(model, env, nepisodes, ntrials_per_episode, behavior_policy=None
             a = None
 
             for j in range(ntrials_per_episode):
-                obs = np.array([env.reset()[0]])
-                if include_prev_reward:
-                    obs = prev_reward_wrapper(obs, r)
-                if include_prev_action:
-                    obs = prev_action_wrapper(obs, a, env.action_space.n)
-                if include_beron_wrapper:
-                    obs = beron_wrapper(obs, model.input_size)
+                obs, info = env.reset()
                 done = False
                 
                 if hasattr(env, 'iti'):
@@ -138,16 +104,6 @@ def probe_model(model, env, nepisodes, ntrials_per_episode, behavior_policy=None
 
                     # take action
                     obs_next, r, done, truncated, info = env.step(a)
-
-                    # prepare next observation
-                    if include_prev_reward:
-                        obs_next = prev_reward_wrapper(obs_next, r)
-                    if include_prev_action:
-                        obs_next = prev_action_wrapper(obs_next, a, env.action_space.n)
-                    if include_beron_wrapper:
-                        obs_next = beron_wrapper(obs_next, model.input_size)
-                    if include_beron_censor:
-                        obs_next = beron_censor(obs_next, include_beron_wrapper)
 
                     # save
                     trial.update(obs, a, r, h.numpy(), q.numpy(), info.get('state', None))

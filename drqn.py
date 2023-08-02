@@ -12,10 +12,11 @@ import torch.optim as optim
 device = torch.device('cpu')
 
 from model import DRQN
-from train import train, probe_model, prev_action_wrapper, prev_reward_wrapper, beron_wrapper, beron_censor
+from train import train, probe_model
 from replay import EpisodeMemory, EpisodeBuffer
+from tasks.wrappers import PreviousActionWrapper, PreviousRewardWrapper
 from tasks.roitman2002 import Roitman2002
-from tasks.beron2022 import Beron2022, Beron2022_TrialLevel
+from tasks.beron2022 import Beron2022, Beron2022_TrialLevel, BeronCensorWrapper, BeronWrapper
 
 # training parameters
 learning_rate = 1e-3 # initial learning rate
@@ -89,15 +90,25 @@ def train_model(args):
                       'include_null_action': args.abort_penalty < 0}
         env = Beron2022(**env_params)
 
-    # create models
     input_size = 1 + args.include_prev_reward + args.include_prev_action*env.action_space.n
     if args.include_beron_wrapper and '_time' in args.experiment:
         input_size += 1
+
+    if args.include_prev_reward:
+        env = PreviousRewardWrapper(env)
+    if args.include_prev_action:
+        env = PreviousActionWrapper(env, env.action_space.n)
+    if args.include_beron_wrapper:
+        env = BeronWrapper(env, input_size)
+    if args.include_beron_censor:
+        env = BeronCensorWrapper(env, args.include_beron_wrapper)
+
+    # create models
     Q = DRQN(input_size=input_size,
                 hidden_size=args.hidden_size,
                 output_size=env.action_space.n,
                 recurrent_cell=args.recurrent_cell).to(device)
-    balance_model_to_explore_actions(Q, env, args)
+    # balance_model_to_explore_actions(Q, env, args)
     Q_target = DRQN(input_size=Q.input_size, # stim and reward
                         hidden_size=Q.hidden_size,
                         output_size=Q.output_size,
@@ -136,13 +147,7 @@ def train_model(args):
 
         episode_record = EpisodeBuffer()
         for _ in range(args.ntrials_per_episode):
-            obs = np.array([env.reset()[0]])
-            if args.include_prev_reward:
-                obs = prev_reward_wrapper(obs, r)
-            if args.include_prev_action:
-                obs = prev_action_wrapper(obs, a, env.action_space.n)
-            if args.include_beron_wrapper:
-                obs = beron_wrapper(obs, Q.input_size)
+            obs, info = env.reset()
 
             done = False            
             while not done:
@@ -152,16 +157,6 @@ def train_model(args):
 
                 # take action 
                 obs_next, r, done, truncated, info = env.step(a)
-
-                # prepare next observation
-                if args.include_prev_reward:
-                    obs_next = prev_reward_wrapper(obs_next, r)
-                if args.include_prev_action:
-                    obs_next = prev_action_wrapper(obs_next, a, env.action_space.n)
-                if args.include_beron_wrapper:
-                    obs_next = beron_wrapper(obs_next, Q.input_size)
-                if args.include_beron_censor:
-                    obs_next = beron_censor(obs_next, args.include_beron_wrapper)
                     
                 # make data
                 episode_record.put([obs, a, r/100.0, obs_next, 0.0 if done else 1.0])
@@ -173,6 +168,7 @@ def train_model(args):
                             optimizer=optimizer,
                             batch_size=args.batch_size,
                             gamma=args.gamma,
+                            lmbda=args.lmbda,
                             l2_penalty=args.l2_penalty)
 
                     if (t+1) % args.target_update_period == 0:
@@ -269,6 +265,8 @@ if __name__ == '__main__':
                         default=1, help='time steps between target network updates')
     parser.add_argument('-g', '--gamma', type=float,
                         default=0.9, help='reward discount factor')
+    parser.add_argument('--lmbda', type=float,
+                        default=0, help='lambda for TD(λ)')
     parser.add_argument('--l2_penalty', type=float,
                         default=0, help='penalty on L2 norm of RNN activations')
     parser.add_argument('--use_softmax_policy', action='store_true',

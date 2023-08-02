@@ -74,6 +74,8 @@ run_name = 'h3_berontime5'
 # run_name = 'h3_berontimep1'
 run_name = 'h3_berontime6'
 run_name = 'h3_berontime7'
+run_name = 'h3_brnlambda'
+run_name = 'h3_brnlambda2'
 
 args = json.load(open('data/models/results_{}.json'.format(run_name)))
 env_params = {
@@ -309,7 +311,7 @@ resq = analyze(Trials, key='Qdiff')
 # print(results['rsq'])
 
 ys = [results_rand['rsq'], results['rsq'], resq['rsq']]
-plt.figure(figsize=(1,2))
+plt.figure(figsize=(0.5*len(ys),2))
 plt.plot(range(len(ys)), ys, 'ko')
 plt.xlim([-0.5, len(ys)-0.5])
 plt.xticks(ticks=range(len(ys)), labels=['Untrained\nRQN', 'RQN', 'RQN-ΔQ'], rotation=90)
@@ -371,12 +373,12 @@ niters = 100
 showFPs = True
 showTrials = True
 showPCs = True
-showQ = True
+showQ = False
 
 pca = fit_pca(Trials['train'])
 trials = apply_pca(Trials['test'], pca)
 if showQ:
-    pca.transform = lambda z: (z @ model.output.weight.detach().numpy().T) + model.output.bias.detach().numpy()
+    pca.transform = lambda z: ((z @ model.output.weight.detach().numpy().T) + model.output.bias.detach().numpy())
     lbl = 'Q'
 elif not showPCs:
     pca.transform = lambda z: z
@@ -642,7 +644,7 @@ feature_params = {
     'B': 0 # belief history
 }
 memories = [y for x,y in feature_params.items()] + [1]
-names = ['{}(t-{})'.format(name, t) for name, ts in feature_params.items() for t in range(ts)]
+names = ['{}(t-{})'.format(name, t+1) for name, ts in feature_params.items() for t in range(ts)]
 
 lr = fit_logreg_policy(rnn_features['train'], memories, feature_functions) # refit model with reduced histories, training set
 model_probs, lls, std_errors = compute_logreg_probs(rnn_features['test'], [lr, memories], feature_functions)
@@ -661,26 +663,18 @@ print('ll: {:0.3f}'.format(np.mean(lls)))
 #%% get Q weights using Least Squares (note: valid only when p_rew_max=1)
 
 from analyze import lsql
-from train import prev_reward_wrapper, prev_action_wrapper, beron_wrapper
 
 env = Beron2022_TrialLevel(p_rew_max=1, p_switch=0.1)
-r = 0
-a = None
-obs = np.array([env.reset(seed=555)[0]])
+# todo: wrap env using appropriate wrappers
+obs = env.reset(seed=555)[0]
 
 trials = []
 for i in range(1000):
-    obs = np.array([env.reset()[0]])
-    obs = prev_reward_wrapper(obs, r)
-    obs = prev_action_wrapper(obs, a, env.action_space.n)
-    obs = beron_wrapper(obs)
+    obs = env.reset()[0]
 
     a = int(np.random.rand() < 0.5)
 
     next_obs, r, done, truncated, info = env.step(a)
-    next_obs = prev_reward_wrapper(next_obs, r)
-    next_obs = prev_action_wrapper(next_obs, a, env.action_space.n)
-    next_obs = beron_wrapper(next_obs)
 
     if i > 0:
         trials.append((np.where(obs)[0][0], a, r, np.where(next_obs)[0][0]))
@@ -688,5 +682,3 @@ for i in range(1000):
 
 w = lsql(trials, gamma=0)
 print(np.round(w,3)) # A, b, a, B
-
-# %%
