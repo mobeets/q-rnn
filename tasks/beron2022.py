@@ -6,7 +6,7 @@ from numpy.random import default_rng
 from tasks.trial import get_itis
 
 class Beron2022(gym.Env):
-    def __init__(self, p_rew_max=0.8, p_switch=0.02,
+    def __init__(self, p_rew_max=0.8, p_switch=0.02, ntrials=100,
                  iti_min=0, iti_p=0.25, iti_max=0, iti_dist='geometric',
                  include_null_action=False, abort_penalty=0):
         self.observation_space = spaces.Discrete(1) # 0 during ITI, 1 during ISI
@@ -23,18 +23,13 @@ class Beron2022(gym.Env):
         self.iti_max = iti_max # n.b. only used if iti_dist == 'uniform'
         self.iti_p = iti_p
         self.iti_dist = iti_dist
+
+        self.ntrials = ntrials # total number of trials in episode
+        self.trial_index = None
         
         self.rng_state = default_rng()
         self.rng_reward = default_rng()
         self.rng_iti = default_rng()
-
-    def _get_obs(self):
-        """
-        returns 0 every time
-        """
-        if self.t < self.iti:
-            return 0
-        return 1
     
     def _update_state(self):
         """
@@ -45,6 +40,14 @@ class Beron2022(gym.Env):
         do_switch_state = self.rng_state.random() < self.p_switch
         if do_switch_state:
             self.state = int(self.state == 0) # 0 -> 1, and 1 -> 0
+
+    def _get_obs(self):
+        """
+        returns 0 every time
+        """
+        if self.t < self.iti:
+            return 0
+        return 1
 
     def _sample_reward(self, state, action):
         """
@@ -65,11 +68,17 @@ class Beron2022(gym.Env):
             return int(self.rng_reward.random() < p_reward)
         
     def _get_info(self):
-        return {'state': self.state, 'iti': self.iti, 't': self.t}
+        return {'state': self.state, 'iti': self.iti, 't': self.t, 'trial_index': self.trial_index}
+    
+    def _new_trial(self):
+        self.trial_index += 1
+        self.t = -1 # -1 to ensure we get at least one ITI observation between trials
+        self.iti = get_itis(self, ntrials=1)[0]
+        self._update_state()
 
     def reset(self, seed=None, options=None):
         """
-        start new trial
+        start new episode
         """
         super().reset(seed=seed)
         if seed is not None:
@@ -77,9 +86,9 @@ class Beron2022(gym.Env):
             self.rng_reward = default_rng(seed+1)
             self.rng_iti = default_rng(seed+2)
         
-        self.t = -1 # -1 to ensure we get at least one ITI observation between trials
-        self.iti = get_itis(self, ntrials=1)[0]
-        self._update_state()
+        self.state = None
+        self.trial_index = -1
+        self._new_trial()
         observation = self._get_obs()
         info = self._get_info()
         return observation, info
@@ -88,14 +97,16 @@ class Beron2022(gym.Env):
         """
         agent chooses a port
         """
-        done = self.t >= self.iti
+        trial_done = (self.t >= self.iti)
+        done = trial_done and (self.trial_index+1 >= self.ntrials)
         reward = self._sample_reward(self.state, action)
-        info = self._get_info()
-        self.t += 1
         if not done:
-            observation = self._get_obs()
-        else:
-            observation = 0
+            if trial_done:
+                self._new_trial()
+            else:
+                self.t += 1
+        observation = self._get_obs()
+        info = self._get_info()
         return observation, reward, done, False, info
 
 class BeronCensorWrapper(Wrapper):
@@ -105,10 +116,10 @@ class BeronCensorWrapper(Wrapper):
     def __init__(self, env, include_beron_wrapper):
         super().__init__(env)
         self.include_beron_wrapper = include_beron_wrapper
-        self.t = 0
+        self.tcur = 0
     
     def observation(self, obs):
-        if self.t >= 0:
+        if self.tcur >= 0:
             if self.include_beron_wrapper:
                 obs[:-1] = 0. # censor all but the isi indicator
             else:
@@ -117,13 +128,13 @@ class BeronCensorWrapper(Wrapper):
     
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
-        self.t = info['t']
+        self.tcur = info['t']
         return self.observation(obs), info
     
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
         new_obs = self.observation(obs)
-        self.t = info['t']
+        self.tcur = info['t']
         return new_obs, reward, terminated, truncated, info
 
 class BeronWrapper(ObservationWrapper):
@@ -155,13 +166,16 @@ class BeronWrapper(ObservationWrapper):
         return new_obs # A, b, a, B, wait[optional], isi
 
 class Beron2022_TrialLevel(gym.Env):
-    def __init__(self, p_rew_max=0.8, p_switch=0.02):
+    def __init__(self, p_rew_max=0.8, p_switch=0.02, ntrials=100):
         self.observation_space = spaces.Discrete(1) # 0 every time
         self.action_space = spaces.Discrete(2) # left or right port
         self.p_rew_max = p_rew_max # max prob of reward; should be in [0.5, 1.0]
         self.p_switch = p_switch # prob. of state change each trial
         self.rng_state = default_rng()
         self.rng_reward = default_rng()
+        self.ntrials = ntrials
+        self.trial_index = -1
+        self.t = -1
         self.state = None # if left (0) or right (1) port has higher reward prob
 
     def _get_obs(self):
@@ -169,6 +183,16 @@ class Beron2022_TrialLevel(gym.Env):
         returns 0 every time
         """
         return 0
+    
+    def _sample_reward(self, state, action):
+        """
+        reward probability is determined by whether agent chose the high port
+        """
+        if state == action:
+            p_reward = self.p_rew_max
+        else:
+            p_reward = 1-self.p_rew_max
+        return int(self.rng_reward.random() < p_reward)
     
     def _update_state(self):
         """
@@ -180,15 +204,12 @@ class Beron2022_TrialLevel(gym.Env):
         if do_switch_state:
             self.state = int(self.state == 0) # 0 -> 1, and 1 -> 0
 
-    def _sample_reward(self, state, action):
-        """
-        reward probability is determined by whether agent chose the high port
-        """
-        if state == action:
-            p_reward = self.p_rew_max
-        else:
-            p_reward = 1-self.p_rew_max
-        return int(self.rng_reward.random() < p_reward)
+    def _get_info(self):
+        return {'state': self.state, 'trial_index': self.trial_index}
+
+    def _new_trial(self):
+        self.trial_index += 1
+        self._update_state()
 
     def reset(self, seed=None, options=None):
         """
@@ -198,16 +219,20 @@ class Beron2022_TrialLevel(gym.Env):
         if seed is not None:
             self.rng_state = default_rng(seed)
             self.rng_reward = default_rng(seed+1)
-        self._update_state()
+        self.state = None
+        self.trial_index = -1
+        self._new_trial()
         observation = self._get_obs()
-        return observation, None
+        info = self._get_info()
+        return observation, info
     
     def step(self, action):
         """
         agent chooses a port
         """
         reward = self._sample_reward(self.state, action)
-        done = True
-        info = {'state': self.state}
-        observation = 0
+        done = self.trial_index+1 == self.ntrials
+        self._new_trial()
+        info = self._get_info()
+        observation = self._get_obs()
         return observation, reward, done, False, info

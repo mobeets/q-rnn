@@ -70,7 +70,7 @@ def train(q_net=None, target_q_net=None, episode_memory=None,
     
     return loss/batch_size
 
-def probe_model(model, env, nepisodes, ntrials_per_episode, behavior_policy=None, epsilon=0, tau=tol):
+def probe_model(model, env, nepisodes, behavior_policy=None, epsilon=0, tau=tol):
     
     trials = []
     with torch.no_grad():
@@ -78,32 +78,35 @@ def probe_model(model, env, nepisodes, ntrials_per_episode, behavior_policy=None
             h = model.init_hidden_state(training=False)
             if behavior_policy is not None:
                 hp = behavior_policy.init_hidden_state(training=False)
-            r = 0
-            a = None
 
-            for j in range(ntrials_per_episode):
-                obs, info = env.reset()
-                done = False
-                
-                if hasattr(env, 'iti'):
-                    trial = Trial(env.state, env.iti, index_in_episode=j, episode_index=i)
+            obs, info = env.reset()
+            done = False
+            
+            if hasattr(env, 'iti'):
+                trial = Trial(env.state, env.iti, index_in_episode=env.trial_index, episode_index=i)
+            else:
+                trial = Trial(state=None, index_in_episode=env.trial_index, episode_index=i)
+            while not done:   
+                # get action
+                cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
+                if behavior_policy is None:
+                    a, (q, h) = model.sample_action(cobs, 
+                                        h.to(device), epsilon=epsilon, tau=tau)
                 else:
-                    trial = Trial(state=None, index_in_episode=j, episode_index=i)
-                while not done:   
-                    # get action
-                    cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
-                    if behavior_policy is None:
-                        a, (q, h) = model.sample_action(cobs, 
-                                            h.to(device), epsilon=epsilon, tau=tau)
+                    _, (q, h) = model.sample_action(cobs, h.to(device), epsilon=epsilon, tau=tau)
+                    a, (_, hp) = behavior_policy.sample_action(cobs, hp.to(device), epsilon=epsilon, tau=tau)
+
+                # take action
+                obs_next, r, done, truncated, info = env.step(a)
+                new_trial = env.t == -1
+
+                # save
+                trial.update(obs, a, r, h.numpy(), q.numpy(), info.get('state', None))
+                if new_trial:
+                    trials.append(trial)
+                    if hasattr(env, 'iti'):
+                        trial = Trial(env.state, env.iti, index_in_episode=env.trial_index, episode_index=i)
                     else:
-                        _, (q, h) = model.sample_action(cobs, h.to(device), epsilon=epsilon, tau=tau)
-                        a, (_, hp) = behavior_policy.sample_action(cobs, hp.to(device), epsilon=epsilon, tau=tau)
-
-                    # take action
-                    obs_next, r, done, truncated, info = env.step(a)
-
-                    # save
-                    trial.update(obs, a, r, h.numpy(), q.numpy(), info.get('state', None))
-                    obs = obs_next
-                trials.append(trial)
+                        trial = Trial(state=None, index_in_episode=env.trial_index, episode_index=i)
+                obs = obs_next
     return trials

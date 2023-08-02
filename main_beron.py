@@ -77,6 +77,7 @@ run_name = 'h3_berontime6'
 run_name = 'h3_berontime7'
 run_name = 'h3_brnlambda'
 run_name = 'h3_brnlambda2'
+run_name = 'h3_test2'
 
 args = json.load(open('data/models/results_{}.json'.format(run_name)))
 env_params = {
@@ -84,7 +85,8 @@ env_params = {
     'p_switch': args.get('p_switch', 0.02),
     'iti_min': args.get('iti_min', 0), 'iti_p': args.get('iti_p', 0.5), 
     'abort_penalty': args.get('abort_penalty', 0),
-    'include_null_action': args.get('abort_penalty', 0) < 0}
+    'include_null_action': args.get('abort_penalty', 0) < 0,
+    'ntrials': 1000}
 hidden_size = args['hidden_size']
 modelfile = args['filenames']['weightsfile_final']
 initial_modelfile = args['filenames']['weightsfile_initial']
@@ -92,22 +94,19 @@ print('H={}, prew={}, pswitch={}'.format(hidden_size, env_params['p_rew_max'], e
 input_size = 1 + args['include_prev_reward'] + args['include_prev_action']*env.action_space.n
 if args['experiment'] == 'beron2022_time':
     input_size += args.get('include_beron_wrapper', False)
-
 epsilon = 0; tau = None
-# tau = 0.00001; epsilon = None
-nepisodes = 1; ntrials_per_episode = 1000
 
 if args['experiment'] == 'beron2022_time':
     env = Beron2022(**env_params)
 else:
     env = Beron2022_TrialLevel(**env_params)
-if args.include_prev_reward:
+if args['include_prev_reward']:
     env = PreviousRewardWrapper(env)
-if args.include_prev_action:
+if args['include_prev_action']:
     env = PreviousActionWrapper(env, env.action_space.n)
-if args.include_beron_wrapper:
+if args['include_beron_wrapper']:
     env = BeronWrapper(env, input_size)
-if args.include_beron_censor:
+if args['include_beron_censor']:
     env = BeronCensorWrapper(env, args['include_beron_wrapper'])
 
 model = DRQN(input_size=input_size, # empty + prev reward + prev actions
@@ -142,8 +141,7 @@ for useRandomModel in [True, False]:
 
         # run model on trials
         trials = probe_model(model, env, behavior_policy=behavior_policy,
-                                epsilon=epsilon, tau=tau,
-                                nepisodes=nepisodes, ntrials_per_episode=ntrials_per_episode)
+                                epsilon=epsilon, tau=tau, nepisodes=1)
         print(useRandomModel, name, np.round(np.hstack([trial.R for trial in trials]).mean(),3))
 
         # add beliefs
