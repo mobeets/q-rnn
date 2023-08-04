@@ -40,38 +40,38 @@ test_features, _, block_pos_core = pull_sample_dataset(test_session_ids, data)
 
 #%% decoding to predict next action
 
-pm1 = lambda x: 2 * x - 1
+pm1 = lambda x: 2*x - 1
 feature_functions = [
     lambda cs, rs: pm1(cs),                # choices
     lambda cs, rs: rs,                     # rewards
     lambda cs, rs: pm1(cs) * rs,           # +1 if choice=1 and reward, 0 if no reward, -1 if choice=0 and reward
-    lambda cs, rs: -pm1(cs) * (1-rs),       # -1 if choice=1 and no reward, 1 if reward, +1 if choice=0 and no reward
-    lambda cs, rs: (cs == rs),
-    lambda cs, rs: (cs != rs),
-    lambda cs, rs: pm1((cs == rs)),
+    lambda cs, rs: -pm1(cs) * (1-rs),      # -1 if choice=1 and no reward, 1 if reward, +1 if choice=0 and no reward
+    lambda cs, rs: pm1((cs == rs)),   
     lambda cs, rs: np.ones(len(cs))        # overall bias term
 ]
 
 feature_params = {
-    'A': 5, # choice history
-    'R': 0, # reward history
-    'A*R': 5, # choice * reward history (original)
-    'A*(R-1)': 5, # -choice * reward history
-    'B': 0 # belief history
+    'a': 1, # choice history
+    'r': 1, # reward history
+    'x': 5, # rewarded trials, aligned to action (original)
+    'y': 5, # unrewarded trials, aligned to action
+    'b': 0 # belief history
 }
+
 memories = [y for x,y in feature_params.items()] + [1]
-names = ['{}(t-{})'.format(name, t) for name, ts in feature_params.items() for t in range(ts)]
+names = ['{}(t-{})'.format(name, t+1) for name, ts in feature_params.items() for t in range(ts)]
 
 lr = fit_logreg_policy(train_features, memories, feature_functions) # refit model with reduced histories, training set
 model_probs, lls, std_errors = compute_logreg_probs(test_features, [lr, memories], feature_functions)
 
-plt.figure(figsize=(3,2))
+plt.figure(figsize=(4,1))
 plt.plot(lr.coef_[0,:-1], '.')
 for i, (w, se) in enumerate(zip(lr.coef_[0,:-1], std_errors[:-1])):
-    plt.plot([i,i], [w-se, w+se], 'k-', alpha=1.0, linewidth=1, zorder=-1)
+    plt.plot([i,i], [w-se, w+se], 'k-', alpha=0.5, linewidth=1, zorder=-1)
 plt.plot(plt.xlim(), [0, 0], 'k-', alpha=0.3, linewidth=1, zorder=-2)
 plt.xticks(ticks=range(len(names)), labels=names, rotation=90)
 plt.ylabel('weight')
-plt.title('LL={:0.3f}'.format(np.mean(lls)))
+# plt.title('LL={:0.3f}'.format(np.mean(lls)))
+plt.ylim([-0.4,2.3])
 plt.show()
 print('ll: {:0.3f}'.format(np.mean(lls)))

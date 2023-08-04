@@ -69,20 +69,26 @@ run_name = 'h2_beronnew'
 run_name = 'h2_beronp1switch'
 run_name = 'h3_berontime'
 run_name = 'h3_berontime2'
-run_name = 'h2_berontime3'
-run_name = 'h3_berontime4'
-run_name = 'h3_berontime5'
+# run_name = 'h2_berontime3'
+# run_name = 'h3_berontime4'
+# run_name = 'h3_berontime5'
 # run_name = 'h3_berontimep1'
-run_name = 'h3_berontime6'
+# run_name = 'h3_berontime6'
 run_name = 'h3_berontime7'
-run_name = 'h3_brnlambda'
-run_name = 'h3_brnlambda2'
+# run_name = 'h3_brnlambda'
+# run_name = 'h3_brnlambda2'
 # run_name = 'h3_test'
 # run_name = 'h3_test2'
 # run_name = 'h3_berontime6'
-run_name = 'h3_test4a'
+# run_name = 'h3_test4a'
+run_name = 'h3_proto'
+run_name = 'h5_proto2'
+run_name = 'h10_proto3'
+run_name = 'h10_grant1'
 
-ntrials = 1000
+ntrials = 9000
+epsilon = 0.03; tau = None
+
 args = json.load(open('data/models/results_{}.json'.format(run_name)))
 env_params = {
     'p_rew_max': args.get('p_reward_max', 0.8),
@@ -92,7 +98,6 @@ hidden_size = args['hidden_size']
 modelfile = args['filenames']['weightsfile_final']
 initial_modelfile = args['filenames']['weightsfile_initial']
 print('H={}, prew={}, pswitch={}'.format(hidden_size, env_params['p_rew_max'], env_params['p_switch']))
-epsilon = 0; tau = None
 
 if args['experiment'] == 'beron2022_time':
     env_params.update({'iti_min': args.get('iti_min', 0), 'iti_p': args.get('iti_p', 0.5), 
@@ -112,7 +117,7 @@ if args['include_prev_action']:
     env = PreviousActionWrapper(env, env.action_space.n)
 if args['include_beron_wrapper']:
     env = BeronWrapper(env, input_size)
-if args['include_beron_censor']:
+if args.get('include_beron_censor', False):
     env = BeronCensorWrapper(env, args['include_beron_wrapper'])
 
 model = DRQN(input_size=input_size, # empty + prev reward + prev actions
@@ -163,16 +168,6 @@ for useRandomModel in [True, False]:
             Trials_rand[name] = trials
         else:
             Trials[name] = trials
-
-#%%
-
-# seed = 555
-# # env.env.env.state = 1
-# env.reset(seed=seed)
-# model.reset_rng(seed+1)
-# trials = probe_model(model, env, behavior_policy=None,
-#                         epsilon=epsilon, tau=tau,
-#                         nepisodes=1)
 
 #%% plot Fig. 1B from Beron et al. (2022)
 
@@ -241,14 +236,17 @@ for showHighPort in [True, False]:
     As = np.vstack(As)
     xs = np.arange(-tBefore, tAfter)
 
-    plt.plot(xs, np.nanmean(As, axis=0), 'k.-')
-    plt.plot([0, 0], [-0.05, 1.05], 'k--', zorder=-1, alpha=0.5)
+    plt.plot(xs, np.nanmean(As, axis=0), 'k-')
+    plt.plot([0, 0], [-0.05, 1.05], 'k:', zorder=-1, alpha=0.5)
     plt.xlabel('Block Position')
     if showHighPort:
         plt.ylabel('P(high port)')
     else:
         plt.ylabel('P(switch)')
     plt.ylim([-0.02, 1.02])
+    if not showHighPort:
+        plt.ylim([-0.02, 0.5])
+    plt.xlim([-tBefore, tAfter])
 plt.tight_layout()
 
 #%% characterize switching probs given 'words', as in Fig. 2D of Beron et al. (2022)
@@ -296,9 +294,10 @@ freqs = [(word, p, np.sqrt(p*(1-p)/n) if n > 0 else 0) for word,p,n in freqs] # 
 freqs = sorted(freqs, key=lambda x: x[1])
 xs = np.arange(len(freqs))
 
-plt.figure(figsize=(8,2))
-plt.bar(xs, [y for x,y,z in freqs], color='k', alpha=0.5)
+plt.figure(figsize=(9,2))
+# plt.bar(xs, [y for x,y,z in freqs], color='k', alpha=0.5)
 for x, (_,p,se) in zip(xs, freqs):
+    plt.bar(x, p, color='k', alpha=0.5 if se < 0.2 else 0.2)
     plt.plot([x,x], [p-se, p+se], 'k-', linewidth=1)
 plt.xticks(ticks=xs, labels=[x for x,y,z in freqs], rotation=90)
 plt.yticks([0,0.25,0.5,0.75,1])
@@ -323,17 +322,19 @@ for x in np.unique(X, axis=0):
 #%% compare beliefs and latent activity
 
 results_rand = analyze(Trials_rand, key='Z')
-# print(results_rand['rsq'])
+print(results_rand['rsq'])
 results = analyze(Trials, key='Z')
 resq = analyze(Trials, key='Qdiff')
-# print(results['rsq'])
+print(results['rsq'])
 
-ys = [results_rand['rsq'], results['rsq'], resq['rsq']]
+ys = [results_rand['rsq'], results['rsq']]#, resq['rsq']]
+labels = ['Untrained\nRQN', 'RQN']#, 'RQN-ΔQ']
 plt.figure(figsize=(0.5*len(ys),2))
 plt.plot(range(len(ys)), ys, 'ko')
 plt.xlim([-0.5, len(ys)-0.5])
-plt.xticks(ticks=range(len(ys)), labels=['Untrained\nRQN', 'RQN', 'RQN-ΔQ'], rotation=90)
+plt.xticks(ticks=range(len(ys)), labels=labels, rotation=90)
 plt.ylim([-0.05,1.05])
+plt.ylabel('Belief $R^2$')
 
 #%% plot belief predictions over trials
 
@@ -391,7 +392,7 @@ niters = 100
 showFPs = True
 showTrials = True
 showPCs = True
-showQ = False
+showQ = True
 
 pca = fit_pca(Trials['train'])
 trials = apply_pca(Trials['test'], pca)
@@ -630,6 +631,29 @@ for p_rew_max in p_rew_maxs[:1]:
         b_end = Bs[(a_prev,r_prev,0.5)][-1]
         b_ends.append(b_end)
 
+#%% get Q weights using Least Squares (note: valid only when p_rew_max=1)
+
+from analyze import lsql
+
+env = Beron2022_TrialLevel(p_rew_max=1, p_switch=0.1)
+# todo: wrap env using appropriate wrappers
+obs = env.reset(seed=555)[0]
+
+trials = []
+for i in range(1000):
+    obs = env.reset()[0]
+
+    a = int(np.random.rand() < 0.5)
+
+    next_obs, r, done, truncated, info = env.step(a)
+
+    if i > 0:
+        trials.append((np.where(obs)[0][0], a, r, np.where(next_obs)[0][0]))
+    obs = next_obs
+
+w = lsql(trials, gamma=0)
+print(np.round(w,3)) # A, b, a, B
+
 #%% choice regression (using same code as for mice)
 
 from analysis.decoding_beron import fit_logreg_policy, compute_logreg_probs
@@ -653,48 +677,29 @@ feature_functions = [
 ]
 
 feature_params = {
-    'A': 5, # choice history
-    'R': 0, # reward history
-    'A*R': 5, # rewarded trials, aligned to action (original)
-    'A*(R-1)': 5, # unrewarded trials, aligned to action
-    'B': 0 # belief history
+    'a': 1, # choice history
+    'r': 1, # reward history
+    'x': 5, # rewarded trials, aligned to action (original)
+    'y': 5, # unrewarded trials, aligned to action
+    'b': 0 # belief history
 }
+
 memories = [y for x,y in feature_params.items()] + [1]
 names = ['{}(t-{})'.format(name, t+1) for name, ts in feature_params.items() for t in range(ts)]
 
 lr = fit_logreg_policy(rnn_features['train'], memories, feature_functions) # refit model with reduced histories, training set
 model_probs, lls, std_errors = compute_logreg_probs(rnn_features['test'], [lr, memories], feature_functions)
 
-plt.figure(figsize=(3,2))
-plt.plot(lr.coef_[0,:-1], '.')
-for i, (w, se) in enumerate(zip(lr.coef_[0,:-1], std_errors[:-1])):
-    plt.plot([i,i], [w-se, w+se], 'k-', alpha=1.0, linewidth=1, zorder=-1)
+ws = lr.coef_[0,:-1]
+plt.figure(figsize=(len(names)/3,1))
+plt.plot(ws, '.')
+for i, (w, se) in enumerate(zip(ws, std_errors[:-1])):
+    plt.plot([i,i], [w-se, w+se], 'k-', alpha=0.5, linewidth=1, zorder=-1)
 plt.plot(plt.xlim(), [0, 0], 'k-', alpha=0.3, linewidth=1, zorder=-2)
 plt.xticks(ticks=range(len(names)), labels=names, rotation=90)
+plt.yticks(ticks=[0, 2])
 plt.ylabel('weight')
-plt.title('LL={:0.3f}'.format(np.mean(lls)))
+plt.ylim([-0.4,2.3])
+# plt.title('LL={:0.3f}'.format(np.mean(lls)))
 plt.show()
 print('ll: {:0.3f}'.format(np.mean(lls)))
-
-#%% get Q weights using Least Squares (note: valid only when p_rew_max=1)
-
-from analyze import lsql
-
-env = Beron2022_TrialLevel(p_rew_max=1, p_switch=0.1)
-# todo: wrap env using appropriate wrappers
-obs = env.reset(seed=555)[0]
-
-trials = []
-for i in range(1000):
-    obs = env.reset()[0]
-
-    a = int(np.random.rand() < 0.5)
-
-    next_obs, r, done, truncated, info = env.step(a)
-
-    if i > 0:
-        trials.append((np.where(obs)[0][0], a, r, np.where(next_obs)[0][0]))
-    obs = next_obs
-
-w = lsql(trials, gamma=0)
-print(np.round(w,3)) # A, b, a, B

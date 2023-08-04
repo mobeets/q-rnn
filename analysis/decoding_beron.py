@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from sklearn import preprocessing
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import log_loss
 
@@ -52,7 +53,7 @@ def pull_sample_dataset(session_id_list, data):
     
     return sample_features, sample_target, sample_block_pos_core
 
-def encode_session(choices, rewards, memories, featfun):
+def encode_session(choices, rewards, memories, featfun, normalize=False):
     assert len(memories) == len(featfun)
     # Construct the features
     features = []
@@ -63,15 +64,17 @@ def encode_session(choices, rewards, memories, featfun):
             x = np.concatenate((np.zeros(lag), x))
             features.append(x)
     features = np.column_stack(features)
+    if normalize:
+        features = preprocessing.StandardScaler().fit(features).transform(features)
     return features, choices
 
-def compute_logreg_probs(sessions, lr_args, featfun):
+def compute_logreg_probs(sessions, lr_args, featfun, normalize=False):
     lr, memories = lr_args
     model_probs = []
     lls = []
     Xs = []
     for choices, rewards in sessions:
-        X, y = encode_session(choices, rewards, memories, featfun=featfun)
+        X, y = encode_session(choices, rewards, memories, featfun=featfun, normalize=normalize)
         policy = lr.predict_proba(X)#[:, 1]
         ll = -log_loss(y, policy)
         model_probs.append(policy)
@@ -84,8 +87,8 @@ def compute_logreg_probs(sessions, lr_args, featfun):
     std_errors = np.sqrt(np.diag(cov_mat))
     return model_probs, lls, std_errors
 
-def fit_logreg_policy(sessions, memories, featfun, C=1.0):    
-    encoded_sessions = [encode_session(*session, memories, featfun=featfun) for session in sessions]
+def fit_logreg_policy(sessions, memories, featfun, C=1.0, normalize=False):
+    encoded_sessions = [encode_session(*session, memories, featfun=featfun, normalize=normalize) for session in sessions]
     X = np.row_stack([session[0] for session in encoded_sessions])
     y = np.concatenate([session[1] for session in encoded_sessions])
     

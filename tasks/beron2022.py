@@ -53,14 +53,11 @@ class Beron2022(gym.Env):
         """
         reward probability is determined by whether agent chose the high port
         """
-        if self.t < self.iti:
-            if action == 2:
-                return 0
-            else:
-                return self.abort_penalty
-        elif action == 2: # no decision yet
+        if action == 2: # no decision yet
             return 0 
-        else: # decision report
+        elif self.t < self.iti: # early decision (abort penalty)
+            return self.abort_penalty
+        else: # decision reported on time
             if state == action:
                 p_reward = self.p_rew_max
             elif action < 2:
