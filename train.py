@@ -90,11 +90,15 @@ def probe_model(model, env, nepisodes, behavior_policy=None, epsilon=0, tau=tol)
                 # get action
                 cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
                 if behavior_policy is None:
-                    a, (q, h) = model.sample_action(cobs, 
-                                        h.to(device), epsilon=epsilon, tau=tau)
+                    if hasattr(h, 'to'):
+                        h = h.to(device)
+                    a, (q, h) = model.sample_action(cobs, h, epsilon=epsilon, tau=tau)
                 else:
-                    _, (q, h) = model.sample_action(cobs, h.to(device), epsilon=epsilon, tau=tau)
-                    a, (_, hp) = behavior_policy.sample_action(cobs, hp.to(device), epsilon=epsilon, tau=tau)
+                    if hasattr(h, 'to'):
+                        h = h.to(device)
+                        hp = hp.to(device)
+                    _, (q, h) = model.sample_action(cobs, h, epsilon=epsilon, tau=tau)
+                    a, (_, hp) = behavior_policy.sample_action(cobs, hp, epsilon=epsilon, tau=tau)
 
                 # take action
                 obs_next, r, done, truncated, info_next = env.step(a)
@@ -102,7 +106,9 @@ def probe_model(model, env, nepisodes, behavior_policy=None, epsilon=0, tau=tol)
                 # print(cobs, h, q, a, r, info['t'])
 
                 # save
-                trial.update(obs, a, r, h.numpy(), q.numpy(), info.get('state', None))
+                hc = h.numpy() if hasattr(h, 'numpy') else np.array(h)
+                qc = q.numpy() if hasattr(q, 'numpy') else np.array(q)
+                trial.update(obs, a, r, hc, qc, info.get('state', None))
                 if new_trial:
                     trials.append(trial)
                     if hasattr(env, 'iti'):

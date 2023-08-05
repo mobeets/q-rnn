@@ -1,4 +1,5 @@
 import numpy as np
+from tasks.beron2022 import belief_step_beron2022
 
 def lsql(experience, gamma, k=None, d=None):
     """
@@ -67,10 +68,7 @@ def add_beliefs_beron2022(trials, p_rew_max, p_switch, b_init=0.5):
         else:
             # b(t) = P(s(t) = 1 | a(1:t-1), r(1:t-1))
             #      = P(s(t) = 1 | a(t-1), r(t-1), b(t-1))
-            b_lik_0 = (1-p_rew_max) if a_prev == r_prev else p_rew_max # P(r | s=0, a)
-            b_lik_1 = p_rew_max if a_prev == r_prev else (1-p_rew_max) # P(r | s=1, a)
-            b_lik = b_prev*b_lik_1 / ((1-b_prev)*b_lik_0 + b_prev*b_lik_1)
-            b = p_switch*(1-b_lik) + (1-p_switch)*b_lik
+            b = belief_step_beron2022(b_prev, r_prev, a_prev, p_rew_max, p_switch)
 
         trial.B = np.array([b]*len(trial.A))[:,None]
         B.append(b)

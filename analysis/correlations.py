@@ -58,27 +58,38 @@ def linreg_eval(X, Y, mdl):
 
 #%% BELIEF R-SQUARED
 
-def fit_belief_weights(trials, key='Z'):
-    X = np.vstack([trial.__dict__[key] for trial in trials])
-    Y = np.vstack([trial.B for trial in trials])
+def get_data(trials, key='Z', onlyLastTimestep=False):
+    if onlyLastTimestep:
+        X = np.vstack([trial.__dict__[key][-1:] for trial in trials])
+        Y = np.vstack([trial.B[-1:] for trial in trials])
+    else:
+        X = np.vstack([trial.__dict__[key] for trial in trials])
+        Y = np.vstack([trial.B for trial in trials])
+    return X, Y
+
+def fit_belief_weights(trials, key='Z', onlyLastTimestep=False):
+    X, Y = get_data(trials, key=key, onlyLastTimestep=onlyLastTimestep)
     return linreg_fit(X, Y, scale=True, add_bias=True)
 
-def add_and_score_belief_prediction(trials, belief_weights, key='Z'):
-    X = np.vstack([trial.__dict__[key] for trial in trials])
-    Y = np.vstack([trial.B for trial in trials])
+def add_and_score_belief_prediction(trials, belief_weights, key='Z', onlyLastTimestep=False):
+    X, Y = get_data(trials, key=key, onlyLastTimestep=onlyLastTimestep)
     res = linreg_eval(X, Y, belief_weights)
 
     # add belief prediction to trials
     Yhat = res['Yhat']
     i = 0
     for trial in trials:
-        trial.__dict__['Bhat_' + key] = Yhat[i:(i+trial.trial_length)]
-        i += trial.trial_length
+        if onlyLastTimestep:
+            trial.__dict__['Bhat_' + key] = 0*trial.B
+            trial.__dict__['Bhat_' + key][-1:] = Yhat[i:(i+1)]
+            i += 1
+        else:
+            trial.__dict__['Bhat_' + key] = Yhat[i:(i+trial.trial_length)]
+            i += trial.trial_length
     return res['rsq']
 
-def analyze(Trials, key='Z'):
+def analyze(Trials, key='Z', onlyLastTimestep=False):
     results = {}
-    results['weights'] = fit_belief_weights(Trials['train'], key=key)
-    results['rsq'] = add_and_score_belief_prediction(Trials['test'], results['weights'], key=key)
-    # results['rdm'], results['rsa'] = get_rsa(Trials['test'])
+    results['weights'] = fit_belief_weights(Trials['train'], key=key, onlyLastTimestep=onlyLastTimestep)
+    results['rsq'] = add_and_score_belief_prediction(Trials['test'], results['weights'], key=key, onlyLastTimestep=onlyLastTimestep)
     return results

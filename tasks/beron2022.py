@@ -219,3 +219,41 @@ class Beron2022_TrialLevel(gym.Env):
         info = self._get_info()
         observation = self._get_obs()
         return observation, reward, done, False, info
+
+def belief_step_beron2022(b_prev, r_prev, a_prev, p_rew_max, p_switch):
+    # b(t) = P(s(t) = 1 | a(1:t-1), r(1:t-1))
+    #      = P(s(t) = 1 | a(t-1), r(t-1), b(t-1))
+    b_lik_0 = (1-p_rew_max) if a_prev == r_prev else p_rew_max # P(r | s=0, a)
+    b_lik_1 = p_rew_max if a_prev == r_prev else (1-p_rew_max) # P(r | s=1, a)
+    b_lik = b_prev*b_lik_1 / ((1-b_prev)*b_lik_0 + b_prev*b_lik_1)
+    return p_switch*(1-b_lik) + (1-p_switch)*b_lik
+
+class BeronBeliefAgent:
+    def __init__(self, env, b_init=0.5):
+        self.env = env
+        self.b_init = b_init
+        self.b = b_init
+        self.rng_agent = default_rng()
+        assert self.env.action_space.n == 2
+
+    def reset(self, seed=None):
+        if seed is not None:
+            self.rng_agent = default_rng(seed)
+        self.b = self.b_init
+
+    def init_hidden_state(self, **kwargs):
+        self.b = self.b_init
+        return self.b
+    
+    def sample_action(self, obs, b_prev, epsilon=None, **kwargs):
+        if hasattr(obs, 'numpy'):
+            obs = obs.numpy().flatten()
+        try:
+            b_prev = b_prev[0]
+        except TypeError:
+            pass
+        self.b = belief_step_beron2022(b_prev, obs[1], np.argmax(obs[2:]), self.env.p_rew_max, self.env.p_switch)
+        
+        if epsilon is not None and epsilon > 0 and self.rng_agent.random() < epsilon:
+            return int(self.rng_agent.random() < 0.5)
+        return int(self.b > 0.5), ([1-self.b, self.b], [self.b])

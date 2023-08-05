@@ -47,11 +47,11 @@ def eval_model(model_file, ntrials, epsilon, tau=None, verbose=False):
                     recurrent_cell=args.get('recurrent_cell', 'gru')).to(device)
     model.load_weights_from_path(modelfile)
 
-    behavior_policy = DRQN(input_size=input_size, # empty + prev reward + prev actions
-                    hidden_size=hidden_size,
-                    output_size=env.action_space.n,
-                    recurrent_cell=args.get('recurrent_cell', 'gru')).to(device)
-    behavior_policy.load_weights_from_path(initial_modelfile)
+    # behavior_policy = DRQN(input_size=input_size, # empty + prev reward + prev actions
+    #                 hidden_size=hidden_size,
+    #                 output_size=env.action_space.n,
+    #                 recurrent_cell=args.get('recurrent_cell', 'gru')).to(device)
+    # behavior_policy.load_weights_from_path(initial_modelfile)
     behavior_policy = None
 
     # probe model

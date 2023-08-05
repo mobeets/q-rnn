@@ -34,14 +34,17 @@ from plotting.behavior import plot_decoding_weights
 
 epsilon = 0.02
 ntrials = 10000
-fnms = glob.glob(os.path.join('data', 'models', '*grant*.json'))
-AllTrials = {}
+fnms = glob.glob(os.path.join('data', 'models', '*granz*.json'))
+AllTrials = []
+AllTrialsRand = []
 for fnm in fnms:
-    Trials, _, _ = eval_model(fnm, ntrials, epsilon)
-    AllTrials[fnm] = Trials
+    Trials, Trials_rand, _ = eval_model(fnm, ntrials, epsilon)
+    AllTrials.append(Trials)
+    AllTrialsRand.append(Trials_rand)
 
-plot_average_actions_around_switch([Trials['test'] for Trials in AllTrials.values()])
-plot_switching_by_symbol([Trials['test'] for Trials in AllTrials.values()])
+plot_average_actions_around_switch([Trials['test'] for Trials in AllTrials])
+plot_switching_by_symbol([Trials['test'] for Trials in AllTrials])
+
 feature_params = {
     'choice': 5, # choice history
     'reward': 5, # reward history
@@ -49,27 +52,58 @@ feature_params = {
     '-choice*omission': 5, # unrewarded trials, aligned to action
     'b': 0 # belief history
 }
-
-weights, std_errors, names, lls = get_rnn_decoding_weights(AllTrials.values(), feature_params)
+weights, std_errors, names, lls = get_rnn_decoding_weights(AllTrials, feature_params)
 plot_decoding_weights_grouped(weights, std_errors, feature_params)
 
-# mouse_trials = load_mouse_data()
+if 'mouse_trials' not in vars():
+    mouse_trials = load_mouse_data()
 weights, std_errors, names, lls = get_mouse_decoding_weights(mouse_trials, feature_params)
 plot_decoding_weights_grouped(weights, std_errors, feature_params)
 
-#%% example random agent
+#%% plot belief R^2
 
-env = Beron2022_TrialLevel()
+Rsqs = []
+for Trials, Trials_rand in zip(AllTrials, AllTrialsRand):
+    results_rand = analyze(Trials_rand, key='Z', onlyLastTimestep=True)
+    results = analyze(Trials, key='Z', onlyLastTimestep=True)
+    Rsqs.append((results_rand['rsq'], results['rsq']))
+Rsqs = np.vstack(Rsqs)
+
+mus = np.mean(Rsqs, axis=0)
+ses = np.std(Rsqs, axis=0)/np.sqrt(len(Rsqs))
+names = ['Untrained\nRQN', 'RQN']
+
+plt.figure(figsize=(1.8,4))
+for i,(mu,se,name) in enumerate(zip(mus,ses,names)):
+    plt.plot(i, mu, 'ko', zorder=1)
+    plt.plot(i*np.ones(2), [mu-se, mu+se], 'k-', zorder=-1)
+    ys = Rsqs[:,i]
+    xs = i*np.ones(len(ys))
+    xs += 0.2*(np.random.rand(len(xs))-0.5)
+    plt.plot(xs, ys, '.', markersize=5, zorder=0, color='gray')
+plt.xlim([-0.5, len(mus)-1+0.5])
+plt.ylim([0, 1])
+plt.xticks(ticks=[0,1], labels=names, rotation=90)
+plt.ylabel('Belief $R^2$')
+plt.tight_layout()
+
+#%% example belief agent
+
+from tasks.beron2022 import BeronBeliefAgent
+
+ntrials = 1000
+env_params = {'p_rew_max': 0.8, 'p_switch': 0.02, 'ntrials': ntrials}
+env = Beron2022_TrialLevel(**env_params)
+env = PreviousRewardWrapper(env)
+env = PreviousActionWrapper(env, env.action_space.n)
+
 seed = 555
-last_obs = env.reset(seed=seed)[0]
-done = False
-trials = []
-while not done:
-    obs = last_obs
-    a = int(np.random.rand() < 0.5)
-    last_obs, r, done, truncated, info = env.step(a)
-    trials.append((info['state'], a, r))
-trials = np.vstack(trials)
+obs, info = env.reset(seed=seed)
+agent = BeronBeliefAgent(env)
+agent.reset(seed=seed+1)
+
+epsilon = 0
+trials = probe_model(agent, env, behavior_policy=None, epsilon=epsilon, tau=None, nepisodes=1)
 
 #%% load model
 
