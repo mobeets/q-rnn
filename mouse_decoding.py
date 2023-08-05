@@ -17,26 +17,28 @@ mpl.rcParams['axes.spines.top'] = False
 
 #%% load data
 
-data = pd.read_csv(os.path.join('data/mouse/mouse_data.csv'))
-data.head()
+def load_mouse_data(filename='data/mouse/mouse_data.csv'):
+    data = pd.read_csv(filename)
+    data.head()
 
-probs = '80-20' # P(high)-P(low)
-seq_nback = 3 # history length for conditional probabilites
-train_prop = 0.7 # for splitting sessions into train and test
-seed = np.random.randint(1000) # set seed for reproducibility
+    probs = '80-20' # P(high)-P(low)
+    seq_nback = 3 # history length for conditional probabilites
+    train_prop = 0.7 # for splitting sessions into train and test
+    seed = np.random.randint(1000) # set seed for reproducibility
 
-data = data.loc[data.Condition==probs] # segment out task condition
+    data = data.loc[data.Condition==probs] # segment out task condition
 
-data = add_history_cols(data, seq_nback) # set history labels up front
+    data = add_history_cols(data, seq_nback) # set history labels up front
 
-train_session_ids, test_session_ids = train_test_split(data.Session.unique(), 
-                                                       train_size=train_prop, random_state=seed) # split full df for train/test
-data['block_pos_rev'] = data['blockTrial'] - data['blockLength'] # reverse block position from transition
-data['model'] = 'mouse'
-data['highPort'] = data['Decision']==data['Target'] # boolean, chose higher probability port
+    train_session_ids, test_session_ids = train_test_split(data.Session.unique(), 
+                                                        train_size=train_prop, random_state=seed) # split full df for train/test
+    data['block_pos_rev'] = data['blockTrial'] - data['blockLength'] # reverse block position from transition
+    data['model'] = 'mouse'
+    data['highPort'] = data['Decision']==data['Target'] # boolean, chose higher probability port
 
-train_features, _, _ = pull_sample_dataset(train_session_ids, data)
-test_features, _, block_pos_core = pull_sample_dataset(test_session_ids, data)
+    train_features, _, _ = pull_sample_dataset(train_session_ids, data)
+    test_features, _, block_pos_core = pull_sample_dataset(test_session_ids, data)
+    return {'train': train_features, 'test': test_features}
 
 #%% decoding to predict next action
 

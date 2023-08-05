@@ -29,18 +29,19 @@ def plot_example_actions(trials, doShow=True):
     if doShow:
         plt.show()
 
-def plot_average_actions_around_switch(Trials, tBefore=10, tAfter=20, doShow=True):
+def plot_average_actions_around_switch(AllTrials, tBefore=10, tAfter=20, doShow=True):
     """
     plot Fig. 1C-D from Beron et al. (2022)
     """
     plt.figure(figsize=(6,2))
     
-    for trials in Trials:
-        S = np.hstack([trial.S[-1] for trial in trials])
-        switchInds = np.hstack([0, np.where(np.diff(S) != 0)[0] + 1, len(S)+1])
-        
-        for showHighPort in [True, False]:
-            plt.subplot(1,2,-int(showHighPort)+2)
+    for showHighPort in [True, False]:
+        plt.subplot(1,2,-int(showHighPort)+2)
+        values = []
+        for trials in AllTrials:
+            S = np.hstack([trial.S[-1] for trial in trials])
+            switchInds = np.hstack([0, np.where(np.diff(S) != 0)[0] + 1, len(S)+1])
+            
             if showHighPort:
                 A = np.hstack([trial.S[-1] == trial.A[-1] for trial in trials])
             else:
@@ -66,8 +67,14 @@ def plot_average_actions_around_switch(Trials, tBefore=10, tAfter=20, doShow=Tru
                 As.append(ac)
 
             As = np.vstack(As)
-            xs = np.arange(-tBefore, tAfter)
-            plt.plot(xs, np.nanmean(As, axis=0), 'k-')
+            values.append(np.nanmean(As, axis=0))
+
+        xs = np.arange(-tBefore, tAfter)
+        if len(values) > 1:
+            for vs in values:
+                plt.plot(xs, vs, 'k-', linewidth=1, alpha=0.25)
+        mus = np.vstack(values).mean(axis=0)
+        plt.plot(xs, mus, 'k-')
 
     for showHighPort in [True, False]:
         plt.subplot(1,2,-int(showHighPort)+2)
@@ -105,7 +112,7 @@ def toWord(seq):
     else:
         assert False
 
-def plot_switching_by_symbol(Trials, doShow=True):
+def plot_switching_by_symbol(AllTrials, doShow=True):
     """
     characterize switching probs given 'words', as in Fig. 2D of Beron et al. (2022)
     """
@@ -113,7 +120,7 @@ def plot_switching_by_symbol(Trials, doShow=True):
     counts = {word: (0,0) for word in words}
 
     # counts per model
-    for trials in Trials:
+    for trials in AllTrials:
         symbs = [toSymbol(trial.A[-1], trial.R[-1]) for trial in trials]
         switches = []
         for i in range(len(trials)-4):
@@ -149,14 +156,38 @@ def plot_switching_by_symbol(Trials, doShow=True):
         plt.show()
 
 def plot_decoding_weights(weights, std_errors, names, doShow=True):
-    plt.figure(figsize=(len(names)/3,1))
+    plt.figure(figsize=(len(names)/2,1.5))
     plt.plot(weights, '.')
     for i, (w, se) in enumerate(zip(weights, std_errors[:-1])):
         plt.plot([i,i], [w-se, w+se], 'k-', alpha=0.5, linewidth=1, zorder=-1)
     plt.plot(plt.xlim(), [0, 0], 'k-', alpha=0.3, linewidth=1, zorder=-2)
     plt.xticks(ticks=range(len(names)), labels=names, rotation=90)
-    plt.yticks(ticks=[0, 2])
+    plt.yticks(ticks=[0, 1, 2])
     plt.ylabel('weight')
     plt.ylim([-0.4,2.3])
     if doShow:
         plt.show()
+
+def plot_decoding_weights_grouped(weights, std_errors, feature_params, doShow=True):
+    plt.figure(figsize=(3,2.5))
+    colors = ['#1f77b4', '#2ca02c', '#d62728', '#ff7f0e', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+    i = 0
+    for c, (name, v) in enumerate(feature_params.items()):
+        if v == 0:
+            continue
+        ws = weights[i:(i+v)]
+        ses = std_errors[i:(i+v)]
+        color = colors[c]
+        h = plt.plot(np.arange(len(ws)) + 1, ws, '-' if len(ws) > 1 else '.', color=color, label=name, zorder=1)
+        for j, (w, se) in enumerate(zip(ws, ses)):
+            plt.plot(j*np.ones(2) + 1, [w-se, w+se], '-', color=h[0].get_color(), alpha=0.5, linewidth=1, zorder=0)
+        i += v
+    plt.xlim([0.9, max(feature_params.values())+0.1])
+    plt.plot(plt.xlim(), np.zeros(2), 'k-', linewidth=1, alpha=0.5, zorder=-1)
+    plt.yticks(ticks=[0, 1, 2])
+    plt.xlabel('lag')
+    plt.ylabel('weight')
+    plt.legend(fontsize=8)
+    if doShow:
+        plt.show()
+    

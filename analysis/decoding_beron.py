@@ -3,6 +3,7 @@ import numpy as np
 from sklearn import preprocessing
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import log_loss
+from sklearn.model_selection import train_test_split
 
 def list_to_str(seq):
     seq = [str(el) for el in seq] # convert element of sequence to string
@@ -97,7 +98,7 @@ def fit_logreg_policy(sessions, memories, featfun, C=1.0, normalize=False):
     lr.fit(X, y)
     return lr
 
-#%% RNN SPECIFIC
+#%% RNN/MOUSE SPECIFIC
 
 pm1 = lambda x: 2 * x - 1
 feature_functions = [
@@ -109,6 +110,43 @@ feature_functions = [
     lambda cs, rs: np.ones(len(cs))        # overall bias term
 ]
 
+def get_decoding_weights(features, feature_params):
+    memories = [y for x,y in feature_params.items()] + [1]
+    names = ['{}(t-{})'.format(name, t+1) for name, ts in feature_params.items() for t in range(ts)]
+
+    lr = fit_logreg_policy(features['train'], memories, feature_functions) # refit model with reduced histories, training set
+    model_probs, lls, std_errors = compute_logreg_probs(features['test'], [lr, memories], feature_functions)
+    print('ll: {:0.3f}'.format(np.mean(lls)))
+
+    weights = lr.coef_[0,:-1]
+    return weights, std_errors, names, lls
+
+def load_mouse_data(filename='data/mouse/mouse_data.csv'):
+    data = pd.read_csv(filename)
+    data.head()
+
+    probs = '80-20' # P(high)-P(low)
+    seq_nback = 3 # history length for conditional probabilites
+    train_prop = 0.7 # for splitting sessions into train and test
+    seed = np.random.randint(1000) # set seed for reproducibility
+
+    data = data.loc[data.Condition==probs] # segment out task condition
+
+    data = add_history_cols(data, seq_nback) # set history labels up front
+
+    train_session_ids, test_session_ids = train_test_split(data.Session.unique(), 
+                                                        train_size=train_prop, random_state=seed) # split full df for train/test
+    data['block_pos_rev'] = data['blockTrial'] - data['blockLength'] # reverse block position from transition
+    data['model'] = 'mouse'
+    data['highPort'] = data['Decision']==data['Target'] # boolean, chose higher probability port
+
+    train_features, _, _ = pull_sample_dataset(train_session_ids, data)
+    test_features, _, block_pos_core = pull_sample_dataset(test_session_ids, data)
+    return {'train': train_features, 'test': test_features}
+
+def get_mouse_decoding_weights(mouse_trials, feature_params):
+    return get_decoding_weights(mouse_trials, feature_params)
+
 def get_rnn_decoding_weights(AllTrials, feature_params):
     rnn_features = {}
     for name in ['train', 'test']:
@@ -118,13 +156,4 @@ def get_rnn_decoding_weights(AllTrials, feature_params):
             A = np.hstack([trial.A[-1] for trial in trials])
             R = np.hstack([trial.R[-1] for trial in trials])
             rnn_features[name].append([A,R])
-
-    memories = [y for x,y in feature_params.items()] + [1]
-    names = ['{}(t-{})'.format(name, t+1) for name, ts in feature_params.items() for t in range(ts)]
-
-    lr = fit_logreg_policy(rnn_features['train'], memories, feature_functions) # refit model with reduced histories, training set
-    model_probs, lls, std_errors = compute_logreg_probs(rnn_features['test'], [lr, memories], feature_functions)
-    print('ll: {:0.3f}'.format(np.mean(lls)))
-
-    weights = lr.coef_[0,:-1]
-    return weights, std_errors, names, lls
+    return get_decoding_weights(rnn_features, feature_params)

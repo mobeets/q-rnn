@@ -23,6 +23,40 @@ plt.rcParams['font.family'] = 'Helvetica'
 mpl.rcParams['axes.spines.right'] = False
 mpl.rcParams['axes.spines.top'] = False
 
+#%% eval many models
+
+import glob
+import os.path
+from session import eval_model
+from plotting.behavior import plot_example_actions, plot_average_actions_around_switch, plot_switching_by_symbol, plot_decoding_weights_grouped
+from analysis.decoding_beron import get_rnn_decoding_weights, get_mouse_decoding_weights, load_mouse_data
+from plotting.behavior import plot_decoding_weights
+
+epsilon = 0.02
+ntrials = 10000
+fnms = glob.glob(os.path.join('data', 'models', '*grant*.json'))
+AllTrials = {}
+for fnm in fnms:
+    Trials, _, _ = eval_model(fnm, ntrials, epsilon)
+    AllTrials[fnm] = Trials
+
+plot_average_actions_around_switch([Trials['test'] for Trials in AllTrials.values()])
+plot_switching_by_symbol([Trials['test'] for Trials in AllTrials.values()])
+feature_params = {
+    'choice': 5, # choice history
+    'reward': 5, # reward history
+    'choice*reward': 5, # rewarded trials, aligned to action (original)
+    '-choice*omission': 5, # unrewarded trials, aligned to action
+    'b': 0 # belief history
+}
+
+weights, std_errors, names, lls = get_rnn_decoding_weights(AllTrials.values(), feature_params)
+plot_decoding_weights_grouped(weights, std_errors, feature_params)
+
+# mouse_trials = load_mouse_data()
+weights, std_errors, names, lls = get_mouse_decoding_weights(mouse_trials, feature_params)
+plot_decoding_weights_grouped(weights, std_errors, feature_params)
+
 #%% example random agent
 
 env = Beron2022_TrialLevel()
@@ -172,6 +206,8 @@ for useRandomModel in [True, False]:
 #%% plot Fig. 1B-D from Beron et al. (2022)
 
 from plotting.behavior import plot_example_actions, plot_average_actions_around_switch, plot_switching_by_symbol
+
+Trials, Trials_rand, model = eval_model(run_name, ntrials, epsilon)
 plot_example_actions(Trials['test'])
 plot_average_actions_around_switch([Trials['test']])
 plot_switching_by_symbol([Trials['test']])
