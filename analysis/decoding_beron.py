@@ -96,3 +96,35 @@ def fit_logreg_policy(sessions, memories, featfun, C=1.0, normalize=False):
     lr = LogisticRegression(C=C, fit_intercept=False)
     lr.fit(X, y)
     return lr
+
+#%% RNN SPECIFIC
+
+pm1 = lambda x: 2 * x - 1
+feature_functions = [
+    lambda cs, rs: pm1(cs),                # choices
+    lambda cs, rs: rs,                     # rewards
+    lambda cs, rs: pm1(cs) * rs,           # +1 if choice=1 and reward, 0 if no reward, -1 if choice=0 and reward
+    lambda cs, rs: -pm1(cs) * (1-rs),      # -1 if choice=1 and no reward, 1 if reward, +1 if choice=0 and no reward
+    lambda cs, rs: pm1((cs == rs)),   
+    lambda cs, rs: np.ones(len(cs))        # overall bias term
+]
+
+def get_rnn_decoding_weights(AllTrials, feature_params):
+    rnn_features = {}
+    for name in ['train', 'test']:
+        rnn_features[name] = []
+        for Trials in AllTrials:
+            trials = Trials[name]
+            A = np.hstack([trial.A[-1] for trial in trials])
+            R = np.hstack([trial.R[-1] for trial in trials])
+            rnn_features[name].append([A,R])
+
+    memories = [y for x,y in feature_params.items()] + [1]
+    names = ['{}(t-{})'.format(name, t+1) for name, ts in feature_params.items() for t in range(ts)]
+
+    lr = fit_logreg_policy(rnn_features['train'], memories, feature_functions) # refit model with reduced histories, training set
+    model_probs, lls, std_errors = compute_logreg_probs(rnn_features['test'], [lr, memories], feature_functions)
+    print('ll: {:0.3f}'.format(np.mean(lls)))
+
+    weights = lr.coef_[0,:-1]
+    return weights, std_errors, names, lls

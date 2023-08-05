@@ -169,141 +169,28 @@ for useRandomModel in [True, False]:
         else:
             Trials[name] = trials
 
-#%% plot Fig. 1B from Beron et al. (2022)
+#%% plot Fig. 1B-D from Beron et al. (2022)
 
-from matplotlib.patches import Rectangle
+from plotting.behavior import plot_example_actions, plot_average_actions_around_switch, plot_switching_by_symbol
+plot_example_actions(Trials['test'])
+plot_average_actions_around_switch([Trials['test']])
+plot_switching_by_symbol([Trials['test']])
 
-plt.figure(figsize=(9,1.5))
+#%% choice regression (using same code as for mice)
 
-trials = Trials['test']
-S = np.hstack([trial.S[-1] for trial in trials])
-A = np.hstack([trial.A[-1] for trial in trials])
-R = np.hstack([trial.R[-1] for trial in trials])
-B = np.hstack([trial.B[-1] for trial in trials])
-xs = np.arange(len(S))
+from analysis.decoding_beron import get_rnn_decoding_weights
+from plotting.behavior import plot_decoding_weights
 
-switchInds = np.hstack([0, np.where(np.diff(S) != 0)[0] + 1, len(S)+1])
-for i in range(len(switchInds)-1):
-    x1 = switchInds[i]
-    x2 = switchInds[i+1]
-    if S[x1] == 1:
-        rect = Rectangle((x1-0.5, -0.05), x2-x1, 1.1, alpha=0.4)
-        plt.gca().add_patch(rect)
+feature_params = {
+    'a': 1, # choice history
+    'r': 1, # reward history
+    'x': 5, # rewarded trials, aligned to action (original)
+    'y': 5, # unrewarded trials, aligned to action
+    'b': 0 # belief history
+}
 
-# plt.plot(xs, B, 'k-', linewidth=1, label='Beliefs')
-plt.scatter(xs, A, s=1+5*R, c='k')
-plt.yticks(ticks=[0,1], labels=['left', 'right'])
-plt.xlabel('Trial')
-plt.xlim(0 + np.array([0, 140.5]))
-
-#%% plot Fig. 1C/D from Beron et al. (2022)
-
-tBefore = 10
-tAfter = 20
-
-trials = Trials['test']
-
-S = np.hstack([trial.S[-1] for trial in trials])
-switchInds = np.hstack([0, np.where(np.diff(S) != 0)[0] + 1, len(S)+1])
-
-plt.figure(figsize=(6,2))
-for showHighPort in [True, False]:
-    plt.subplot(1,2,-int(showHighPort)+2)
-    if showHighPort:
-        A = np.hstack([trial.S[-1] == trial.A[-1] for trial in trials])
-    else:
-        A = np.hstack([False, np.hstack([trials[t+1].A[-1] != trials[t].A[-1] for t in range(len(trials)-1)])])
-
-    As = []
-    for i in range(len(switchInds)-1):
-        if i == 0:
-            continue
-        xPre = np.max([switchInds[i-1], switchInds[i]-tBefore])
-        x0 = switchInds[i]
-        xPost = np.min([switchInds[i+1], switchInds[i]+tAfter])
-
-        a_pre = A[xPre:x0]
-        a_post = A[x0:xPost]
-        if len(a_pre) < tBefore:
-            n = tBefore - len(a_pre)
-            a_pre = np.hstack([np.nan*np.ones(n), a_pre])
-        if len(a_post) < tAfter:
-            n = tAfter - len(a_post)
-            a_post = np.hstack([a_post, np.nan*np.ones(n)])
-        ac = np.hstack([a_pre, a_post])
-        As.append(ac)
-
-    As = np.vstack(As)
-    xs = np.arange(-tBefore, tAfter)
-
-    plt.plot(xs, np.nanmean(As, axis=0), 'k-')
-    plt.plot([0, 0], [-0.05, 1.05], 'k:', zorder=-1, alpha=0.5)
-    plt.xlabel('Block Position')
-    if showHighPort:
-        plt.ylabel('P(high port)')
-    else:
-        plt.ylabel('P(switch)')
-    plt.ylim([-0.02, 1.02])
-    if not showHighPort:
-        plt.ylim([-0.02, 0.5])
-    plt.xlim([-tBefore, tAfter])
-plt.tight_layout()
-
-#%% characterize switching probs given 'words', as in Fig. 2D of Beron et al. (2022)
-
-def toSymbol(a,r):
-    if a == 0 and r == 0:
-        return 'l'
-    elif a == 0 and r == 1:
-        return 'L'
-    elif a == 1 and r == 0:
-        return 'r'
-    elif a == 1 and r == 1:
-        return 'R'
-    else:
-        assert False
-
-def toWord(seq):
-    if seq[0].lower() == 'l':
-        return seq.replace('l', 'a').replace('L', 'A').replace('r', 'b').replace('R', 'B')
-    elif seq[0].lower() == 'r':
-        return seq.replace('l', 'b').replace('L', 'B').replace('r', 'a').replace('R', 'A')
-    else:
-        assert False
-
-trials = Trials['test']
-
-symbs = [toSymbol(trial.A[-1], trial.R[-1]) for trial in trials]
-switches = []
-for i in range(len(trials)-4):
-    ctrials = trials[i:(i+4)]
-    if len(set([trial.episode_index for trial in ctrials])) > 1:
-        continue
-    cur = (toWord(''.join(symbs[i:(i+3)])), trials[i+4].A[0] != trials[i+3].A[0])
-    switches.append(cur)
-
-words = [x+y+z for x in 'Aa' for y in 'AaBb' for z in 'AaBb']
-counts = {word: (0,0) for word in words}
-for (word, didSwitch) in switches:
-    if word not in counts:
-        counts[word] = (0,0)
-    c,n = counts[word]
-    counts[word] = (c + int(didSwitch), n+1)
-freqs = [(word, vals[0]/vals[1] if vals[1] > 0 else 0, vals[1]) for word, vals in counts.items()]
-freqs = [(word, p, np.sqrt(p*(1-p)/n) if n > 0 else 0) for word,p,n in freqs] # add binomial SE
-freqs = sorted(freqs, key=lambda x: x[1])
-xs = np.arange(len(freqs))
-
-plt.figure(figsize=(9,2))
-# plt.bar(xs, [y for x,y,z in freqs], color='k', alpha=0.5)
-for x, (_,p,se) in zip(xs, freqs):
-    plt.bar(x, p, color='k', alpha=0.5 if se < 0.2 else 0.2)
-    plt.plot([x,x], [p-se, p+se], 'k-', linewidth=1)
-plt.xticks(ticks=xs, labels=[x for x,y,z in freqs], rotation=90)
-plt.yticks([0,0.25,0.5,0.75,1])
-plt.xlim([-1, xs.max()+1])
-plt.xlabel('history')
-plt.ylabel('P(switch)')
+weights, std_errors, names, lls = get_rnn_decoding_weights([Trials], feature_params)
+plot_decoding_weights(weights, std_errors, names)
 
 #%% accuracy
 
@@ -653,53 +540,3 @@ for i in range(1000):
 
 w = lsql(trials, gamma=0)
 print(np.round(w,3)) # A, b, a, B
-
-#%% choice regression (using same code as for mice)
-
-from analysis.decoding_beron import fit_logreg_policy, compute_logreg_probs
-
-if True:#'rnn_features' not in vars() or 'train' not in rnn_features:
-    rnn_features = {}
-    for name in ['train', 'test']:
-        trials = Trials[name]
-        A = np.hstack([trial.A[-1] for trial in trials])
-        R = np.hstack([trial.R[-1] for trial in trials])
-        rnn_features[name] = [[A,R]]
-
-pm1 = lambda x: 2 * x - 1
-feature_functions = [
-    lambda cs, rs: pm1(cs),                # choices
-    lambda cs, rs: rs,                     # rewards
-    lambda cs, rs: pm1(cs) * rs,           # +1 if choice=1 and reward, 0 if no reward, -1 if choice=0 and reward
-    lambda cs, rs: -pm1(cs) * (1-rs),      # -1 if choice=1 and no reward, 1 if reward, +1 if choice=0 and no reward
-    lambda cs, rs: pm1((cs == rs)),   
-    lambda cs, rs: np.ones(len(cs))        # overall bias term
-]
-
-feature_params = {
-    'a': 1, # choice history
-    'r': 1, # reward history
-    'x': 5, # rewarded trials, aligned to action (original)
-    'y': 5, # unrewarded trials, aligned to action
-    'b': 0 # belief history
-}
-
-memories = [y for x,y in feature_params.items()] + [1]
-names = ['{}(t-{})'.format(name, t+1) for name, ts in feature_params.items() for t in range(ts)]
-
-lr = fit_logreg_policy(rnn_features['train'], memories, feature_functions) # refit model with reduced histories, training set
-model_probs, lls, std_errors = compute_logreg_probs(rnn_features['test'], [lr, memories], feature_functions)
-
-ws = lr.coef_[0,:-1]
-plt.figure(figsize=(len(names)/3,1))
-plt.plot(ws, '.')
-for i, (w, se) in enumerate(zip(ws, std_errors[:-1])):
-    plt.plot([i,i], [w-se, w+se], 'k-', alpha=0.5, linewidth=1, zorder=-1)
-plt.plot(plt.xlim(), [0, 0], 'k-', alpha=0.3, linewidth=1, zorder=-2)
-plt.xticks(ticks=range(len(names)), labels=names, rotation=90)
-plt.yticks(ticks=[0, 2])
-plt.ylabel('weight')
-plt.ylim([-0.4,2.3])
-# plt.title('LL={:0.3f}'.format(np.mean(lls)))
-plt.show()
-print('ll: {:0.3f}'.format(np.mean(lls)))
