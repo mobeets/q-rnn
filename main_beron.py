@@ -30,11 +30,11 @@ import os.path
 from session import eval_model
 from plotting.behavior import plot_example_actions, plot_average_actions_around_switch, plot_switching_by_symbol, plot_decoding_weights_grouped
 from analysis.decoding_beron import get_rnn_decoding_weights, get_mouse_decoding_weights, load_mouse_data
-from plotting.behavior import plot_decoding_weights
+from plotting.behavior import plot_decoding_weights, mouseWordOrder
 
-epsilon = 0.02
+epsilon = 0.05
 ntrials = 10000
-fnms = glob.glob(os.path.join('data', 'models', '*granz*.json'))
+fnms = glob.glob(os.path.join('data', 'models', '*granz*.json')) # 'grant': trial-level, 'granz': timestep-level
 AllTrials = []
 AllTrialsRand = []
 for fnm in fnms:
@@ -43,8 +43,8 @@ for fnm in fnms:
     AllTrialsRand.append(Trials_rand)
 
 plot_average_actions_around_switch([Trials['test'] for Trials in AllTrials])
-plot_switching_by_symbol([Trials['test'] for Trials in AllTrials])
-
+plot_switching_by_symbol([Trials['test'] for Trials in AllTrials], wordOrder=None)
+plot_switching_by_symbol([Trials['test'] for Trials in AllTrials], wordOrder=mouseWordOrder)
 feature_params = {
     'choice': 5, # choice history
     'reward': 5, # reward history
@@ -73,16 +73,17 @@ mus = np.mean(Rsqs, axis=0)
 ses = np.std(Rsqs, axis=0)/np.sqrt(len(Rsqs))
 names = ['Untrained\nRQN', 'RQN']
 
-plt.figure(figsize=(1.8,4))
+plt.figure(figsize=(1.4,2))
 for i,(mu,se,name) in enumerate(zip(mus,ses,names)):
-    plt.plot(i, mu, 'ko', zorder=1)
+    plt.plot(i, mu, 'ko', zorder=1, alpha=0.8)
     plt.plot(i*np.ones(2), [mu-se, mu+se], 'k-', zorder=-1)
     ys = Rsqs[:,i]
     xs = i*np.ones(len(ys))
     xs += 0.2*(np.random.rand(len(xs))-0.5)
-    plt.plot(xs, ys, '.', markersize=5, zorder=0, color='gray')
+    plt.plot(xs, ys, '.', markersize=8, markerfacecolor='lightgray',
+             alpha=1, zorder=-2, markeredgecolor='darkgray')
 plt.xlim([-0.5, len(mus)-1+0.5])
-plt.ylim([0, 1])
+plt.ylim([-0.1, 1.1])
 plt.xticks(ticks=[0,1], labels=names, rotation=90)
 plt.ylabel('Belief $R^2$')
 plt.tight_layout()
@@ -91,19 +92,46 @@ plt.tight_layout()
 
 from tasks.beron2022 import BeronBeliefAgent
 
-ntrials = 1000
+ntrials = 10000
 env_params = {'p_rew_max': 0.8, 'p_switch': 0.02, 'ntrials': ntrials}
 env = Beron2022_TrialLevel(**env_params)
 env = PreviousRewardWrapper(env)
 env = PreviousActionWrapper(env, env.action_space.n)
-
-seed = 555
-obs, info = env.reset(seed=seed)
 agent = BeronBeliefAgent(env)
-agent.reset(seed=seed+1)
 
-epsilon = 0
-trials = probe_model(agent, env, behavior_policy=None, epsilon=epsilon, tau=None, nepisodes=1)
+epsilon = 0.04
+
+nreps = 10
+AllTrials = []
+seeds = [456, 787]
+seeds = [None, None]
+for i in range(nreps):
+    Trials = {}
+    for name, seed in zip(['train', 'test'], seeds):
+        # reset seeds
+        env.state = None
+        if seed is not None:
+            env.reset(seed=seed)
+            agent.reset(seed=seed+1)
+        trials = probe_model(agent, env, behavior_policy=None, epsilon=epsilon, tau=None, nepisodes=1)
+        Trials[name] = trials
+    AllTrials.append(Trials)
+
+# analyze belief agent
+from plotting.behavior import mouseWordOrder
+plot_switching_by_symbol([Trials['test'] for Trials in AllTrials], wordOrder=None)
+plot_switching_by_symbol([Trials['test'] for Trials in AllTrials], wordOrder=mouseWordOrder)
+plot_example_actions(Trials['test'])
+plot_average_actions_around_switch([Trials['test'] for Trials in AllTrials])
+feature_params = {
+    'a': 5, # choice history
+    'r': 5, # reward history
+    'x': 5, # rewarded trials, aligned to action (original)
+    'y': 5, # unrewarded trials, aligned to action
+    'b': 0 # belief history
+}
+weights, std_errors, names, lls = get_rnn_decoding_weights(AllTrials, feature_params)
+plot_decoding_weights_grouped(weights, std_errors, feature_params)
 
 #%% load model
 

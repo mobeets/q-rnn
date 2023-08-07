@@ -4,8 +4,8 @@ def get_itis(self, ntrials=None):
     ntrials = ntrials if ntrials is not None else self.ntrials
     # note: we subtract 1 b/c 1 is the min value returned by geometric
     
-    if self.iti_dist == 'geometric':
-        itis = self.rng_iti.geometric(p=self.iti_p, size=ntrials) - 1
+    if self.iti_dist is None or self.iti_dist == 'geometric':
+        itis = self.rng_iti.geometric(p=self.iti_p if self.iti_p is not None else 0.5, size=ntrials) - 1
     elif self.iti_dist == 'uniform':
         itis = self.rng_iti.choice(range(self.iti_max-self.iti_min+1), size=ntrials)
     else:

@@ -1,6 +1,6 @@
 import numpy as np
 from plotting.base import plt
-from matplotlib.patches import Rectangle
+from matplotlib.patches import Rectangle, Polygon
 
 def plot_example_actions(trials, doShow=True):
     """
@@ -70,23 +70,25 @@ def plot_average_actions_around_switch(AllTrials, tBefore=10, tAfter=20, doShow=
             values.append(np.nanmean(As, axis=0))
 
         xs = np.arange(-tBefore, tAfter)
+        mus = np.vstack(values).mean(axis=0)
+        ses = np.nanstd(np.vstack(values), axis=0)/np.sqrt(len(values))
         if len(values) > 1:
             for vs in values:
-                plt.plot(xs, vs, 'k-', linewidth=1, alpha=0.25)
-        mus = np.vstack(values).mean(axis=0)
+                plt.plot(xs, vs, 'k-', linewidth=1, alpha=0.5)
+        verts = [*zip(xs, mus-ses), *zip(xs[::-1], mus[::-1]+ses[::-1])]
+        plt.gca().add_patch(Polygon(verts, facecolor='0.9', edgecolor='0.5'))
         plt.plot(xs, mus, 'k-')
 
     for showHighPort in [True, False]:
         plt.subplot(1,2,-int(showHighPort)+2)
-        plt.plot([0, 0], [-0.05, 1.05], 'k:', zorder=-1, alpha=0.5)
         plt.xlabel('Block Position')
         if showHighPort:
             plt.ylabel('P(high port)')
         else:
             plt.ylabel('P(switch)')
-        plt.ylim([-0.02, 1.02])
-        if not showHighPort:
-            plt.ylim([-0.02, 0.5])
+        if showHighPort:
+            plt.ylim([-0.02, 1.02])
+        plt.plot([0, 0], plt.ylim(), 'k:', zorder=-1, alpha=0.5)
         plt.xlim([-tBefore, tAfter])
     plt.tight_layout()
     if doShow:
@@ -112,22 +114,30 @@ def toWord(seq):
     else:
         assert False
 
-def plot_switching_by_symbol(AllTrials, doShow=True):
+mouseWordOrder = ['AAA', 'aAA', 'AaA', 'aaA', 'AbB', 'aBB', 'aBA', 'ABA', 'abA', 'abB', 'aaB', 'ABB', 'AAa', 'AaB', 'AbA', 'aAa', 'aAB', 'AAB', 'Aaa', 'aBb', 'ABb', 'Aba', 'aba', 'aaa', 'aab', 'aBa', 'ABa', 'Aab', 'abb', 'AAb', 'aAb', 'Abb']
+
+def plot_switching_by_symbol(AllTrials, doShow=True, wordOrder=None):
     """
     characterize switching probs given 'words', as in Fig. 2D of Beron et al. (2022)
     """
     words = [x+y+z for x in 'Aa' for y in 'AaBb' for z in 'AaBb']
+    if wordOrder is not None:
+        words = wordOrder
     counts = {word: (0,0) for word in words}
+    wordLength = len(words[0])
 
     # counts per model
     for trials in AllTrials:
         symbs = [toSymbol(trial.A[-1], trial.R[-1]) for trial in trials]
         switches = []
-        for i in range(len(trials)-4):
-            ctrials = trials[i:(i+4)]
+        for i in range(len(trials)-wordLength-1):
+            ctrials = trials[i:(i+wordLength+1)]
             if len(set([trial.episode_index for trial in ctrials])) > 1:
                 continue
-            cur = (toWord(''.join(symbs[i:(i+3)])), trials[i+4].A[0] != trials[i+3].A[0])
+            csymbs = symbs[i:(i+wordLength+1)]
+            curWord = toWord(''.join(csymbs))
+            didSwitch = csymbs[-1].upper() != csymbs[-2].upper()
+            cur = (curWord[:-1], didSwitch)
             switches.append(cur)
 
         for (word, didSwitch) in switches:
@@ -138,15 +148,20 @@ def plot_switching_by_symbol(AllTrials, doShow=True):
 
     # tally averages
     freqs = [(word, vals[0]/vals[1] if vals[1] > 0 else 0, vals[1]) for word, vals in counts.items()]
-    freqs = [(word, p, np.sqrt(p*(1-p)/n) if n > 0 else 0) for word,p,n in freqs] # add binomial SE
-    freqs = sorted(freqs, key=lambda x: x[1])
+    freqs = [(word, p, np.sqrt(p*(1-p)/n,) if n > 0 else 0, n) for word,p,n in freqs] # add binomial SE
+    if wordOrder is None:
+        freqs = sorted(freqs, key=lambda x: x[1])
     xs = np.arange(len(freqs))
+    grayOutInds = np.array([i for i,(x,y,z,n) in enumerate(freqs) if n <= 0]).astype(int)
 
-    plt.figure(figsize=(9,2))
-    for x, (_,p,se) in zip(xs, freqs):
+    plt.figure(figsize=(8,2.2))
+    for x, (_,p,se,n) in zip(xs, freqs):
+        # plt.bar(x, n > 10, color='k', alpha=0.5)
         plt.bar(x, p, color='k', alpha=0.5 if se < 0.2 else 0.2)
         plt.plot([x,x], [p-se, p+se], 'k-', linewidth=1)
-    plt.xticks(ticks=xs, labels=[x for x,y,z in freqs], rotation=90)
+    plt.xticks(ticks=xs, labels=[x for x,y,z,n in freqs], rotation=90)
+    for ind in grayOutInds:
+        plt.gca().get_xticklabels()[ind].set_color('gray')
     plt.yticks([0,0.25,0.5,0.75,1])
     plt.xlim([-1, xs.max()+1])
     plt.xlabel('history')
@@ -155,7 +170,7 @@ def plot_switching_by_symbol(AllTrials, doShow=True):
     if doShow:
         plt.show()
 
-def plot_decoding_weights(weights, std_errors, names, doShow=True):
+def plot_decoding_weights(weights, std_errors, names, ylim=None, doShow=True):
     plt.figure(figsize=(len(names)/2,1.5))
     plt.plot(weights, '.')
     for i, (w, se) in enumerate(zip(weights, std_errors[:-1])):
@@ -164,7 +179,8 @@ def plot_decoding_weights(weights, std_errors, names, doShow=True):
     plt.xticks(ticks=range(len(names)), labels=names, rotation=90)
     plt.yticks(ticks=[0, 1, 2])
     plt.ylabel('weight')
-    plt.ylim([-0.4,2.3])
+    if ylim is not None:
+        plt.ylim(ylim)
     if doShow:
         plt.show()
 
@@ -184,7 +200,7 @@ def plot_decoding_weights_grouped(weights, std_errors, feature_params, doShow=Tr
         i += v
     plt.xlim([0.9, max(feature_params.values())+0.1])
     plt.plot(plt.xlim(), np.zeros(2), 'k-', linewidth=1, alpha=0.5, zorder=-1)
-    plt.yticks(ticks=[0, 1, 2])
+    plt.yticks(ticks=[0, 1])
     plt.xlabel('lag')
     plt.ylabel('weight')
     plt.legend(fontsize=8)

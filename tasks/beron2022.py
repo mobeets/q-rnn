@@ -43,7 +43,7 @@ class Beron2022(gym.Env):
 
     def _get_obs(self):
         """
-        returns 0 every time
+        returns indicator of whether or not we are in the ISI
         """
         if self.t < self.iti:
             return 0
@@ -255,5 +255,7 @@ class BeronBeliefAgent:
         self.b = belief_step_beron2022(b_prev, obs[1], np.argmax(obs[2:]), self.env.p_rew_max, self.env.p_switch)
         
         if epsilon is not None and epsilon > 0 and self.rng_agent.random() < epsilon:
-            return int(self.rng_agent.random() < 0.5)
-        return int(self.b > 0.5), ([1-self.b, self.b], [self.b])
+            a = int(self.rng_agent.random() < 0.5)
+        else:
+            a = int(self.b > 0.5)
+        return a, ([1-self.b, self.b], [self.b])
