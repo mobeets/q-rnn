@@ -3,15 +3,15 @@ from gymnasium import spaces
 from numpy.random import default_rng
 from tasks.trial import get_itis
 
-class Example2ABT(gym.Env):
+class ExampleNABT(gym.Env):
     """
-    A simple two-armed bandit task (2ABT) modeled at the time step level
+    A simple N-armed bandit task (NABT) modeled at the time step level
         where decisions are separated by a random intertrial interval
     """
     def __init__(self, ntrials, reward_probs=(0.8, 0.4)):
         self.observation_space = spaces.Discrete(1) # 0 during ITI, 1 during ISI
-        self.action_space = spaces.Discrete(2) # arm choice (Left or Right)
-        self.reward_probs = reward_probs # reward probabilities for (Left arm, Right arm) choice
+        self.action_space = spaces.Discrete(len(reward_probs)) # action choices
+        self.reward_probs = reward_probs # reward probabilities for each action
         self.ntrials = ntrials # total number of trials in episode
         self.trial_index = None # for keeping track of trial index within episode
         self.t = None # for keeping track of timestep index within trial
