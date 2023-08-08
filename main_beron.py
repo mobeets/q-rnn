@@ -32,13 +32,13 @@ from plotting.behavior import plot_example_actions, plot_average_actions_around_
 from analysis.decoding_beron import get_rnn_decoding_weights, get_mouse_decoding_weights, load_mouse_data
 from plotting.behavior import plot_decoding_weights, mouseWordOrder
 
-epsilon = 0.05
+epsilon = None; tau = 0.000001
 ntrials = 10000
-fnms = glob.glob(os.path.join('data', 'models', '*granz*.json')) # 'grant': trial-level, 'granz': timestep-level
+fnms = glob.glob(os.path.join('data', 'models', '*granasoft*.json')) # 'grant': trial-level, 'granz': timestep-level; 'grans': H=2 timestep-evel; 'granasoft': H=10 trial-level w/ softmax
 AllTrials = []
 AllTrialsRand = []
-for fnm in fnms:
-    Trials, Trials_rand, _ = eval_model(fnm, ntrials, epsilon)
+for fnm in fnms[-1:]:
+    Trials, Trials_rand, _, _ = eval_model(fnm, ntrials, epsilon, tau)
     AllTrials.append(Trials)
     AllTrialsRand.append(Trials_rand)
 
@@ -267,12 +267,52 @@ for useRandomModel in [True, False]:
 
 #%% plot Fig. 1B-D from Beron et al. (2022)
 
-from plotting.behavior import plot_example_actions, plot_average_actions_around_switch, plot_switching_by_symbol
+from plotting.behavior import plot_example_actions, plot_average_actions_around_switch, plot_switching_by_symbol, mouseWordOrder
 
-Trials, Trials_rand, model = eval_model(run_name, ntrials, epsilon)
+ntrials = 10000; epsilon = None; tau = 1#0.000001
+
+fnms = glob.glob(os.path.join('data', 'models', '*grant*.json'))
+model_file = fnms[0]
+Trials, Trials_rand, model, env = eval_model(model_file, ntrials, epsilon, tau)
 plot_example_actions(Trials['test'])
 plot_average_actions_around_switch([Trials['test']])
-plot_switching_by_symbol([Trials['test']])
+plot_switching_by_symbol([Trials['test']], modelBased=True, tau=tau)#, wordOrder=mouseWordOrder)
+
+#%%
+
+_, switches = plot_switching_by_symbol([Trials['test']], modelBased=True, tau=0.005)#, wordOrder=mouseWordOrder)
+
+#%% probe model on repeated sequences of inputs
+
+tau = 0.0001
+Zinit = np.vstack([trial.Z for trial in Trials['train']])
+unique_obs = np.unique(np.vstack([trial.X for trial in Trials['train']]), axis=0)
+nreps = 500
+
+for j, x in enumerate(unique_obs):
+    X = [x]*3
+    Z = []
+    Q = []
+    with torch.no_grad():
+        for _ in range(nreps):
+            ind = np.random.choice(range(len(Zinit)))
+            h = torch.tensor(Zinit[ind]).to(device).unsqueeze(0).unsqueeze(0)
+            for obs in X:
+                cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
+                a, (q, h) = model.sample_action(cobs, h, epsilon=epsilon, tau=tau)
+            Z.append(h.numpy().flatten())
+            Q.append(q.numpy().flatten())
+    Z = np.vstack(Z)
+    Q = np.vstack(Q)
+    Qprobs = torch.softmax(torch.Tensor(Q)/tau, axis=1).numpy()
+    mu = Qprobs[:,0].mean()
+    se = Qprobs[:,0].std()/np.sqrt(len(Qprobs))
+    h = plt.plot(j, mu, 'o', label=x)
+    plt.plot(j*np.ones(2), [mu-se, mu+se], '-', color=h[0].get_color())
+plt.xticks(ticks=range(len(unique_obs)), labels=unique_obs, rotation=90)
+plt.xlabel('input (repeated x3)')
+plt.ylabel('$P_{\\tau}(A = 1)$')
+plt.ylim([-0.03, 1.03])
 
 #%% choice regression (using same code as for mice)
 

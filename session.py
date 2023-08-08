@@ -8,7 +8,7 @@ from tasks.wrappers import PreviousRewardWrapper, PreviousActionWrapper
 from analyze import add_beliefs_beron2022
 device = torch.device('cpu')
 
-def eval_model(model_file, ntrials, epsilon, tau=None, verbose=False):
+def eval_model(model_file, ntrials, epsilon=None, tau=None, verbose=False):
     args = json.load(open(model_file))
     env_params = {
         'p_rew_max': args.get('p_reward_max', 0.8),
@@ -59,7 +59,8 @@ def eval_model(model_file, ntrials, epsilon, tau=None, verbose=False):
     Trials_rand = {}
     for useRandomModel in [True, False]:
         if useRandomModel:
-            model.reset(gain=1)
+            # model.reset(gain=1)
+            model.load_weights_from_path(initial_modelfile)
         else:
             model.load_weights_from_path(modelfile)
         
@@ -90,4 +91,4 @@ def eval_model(model_file, ntrials, epsilon, tau=None, verbose=False):
                 Trials_rand[name] = trials
             else:
                 Trials[name] = trials
-    return Trials, Trials_rand, model
+    return Trials, Trials_rand, model, env

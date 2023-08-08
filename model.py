@@ -40,8 +40,8 @@ class DRQN(nn.Module):
             else: # choose best action
                 return output[0].argmax().item(), output
         elif tau is not None: # softmax policy
-            logits = nn.functional.softmax(output[0]/tau, dim=-1)
-            return Categorical(logits=logits).sample().item(), output
+            probs = nn.functional.softmax(output[0]/tau, dim=-1)
+            return Categorical(probs=probs).sample().item(), output
     
     def init_hidden_state(self, batch_size=None, training=None):
         assert training is not None, "training step parameter should be determined"

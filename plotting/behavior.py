@@ -1,6 +1,7 @@
 import numpy as np
 from plotting.base import plt
 from matplotlib.patches import Rectangle, Polygon
+import torch
 
 def plot_example_actions(trials, doShow=True):
     """
@@ -116,7 +117,7 @@ def toWord(seq):
 
 mouseWordOrder = ['AAA', 'aAA', 'AaA', 'aaA', 'AbB', 'aBB', 'aBA', 'ABA', 'abA', 'abB', 'aaB', 'ABB', 'AAa', 'AaB', 'AbA', 'aAa', 'aAB', 'AAB', 'Aaa', 'aBb', 'ABb', 'Aba', 'aba', 'aaa', 'aab', 'aBa', 'ABa', 'Aab', 'abb', 'AAb', 'aAb', 'Abb']
 
-def plot_switching_by_symbol(AllTrials, doShow=True, wordOrder=None):
+def plot_switching_by_symbol(AllTrials, doShow=True, wordOrder=None, modelBased=False, tau=None):
     """
     characterize switching probs given 'words', as in Fig. 2D of Beron et al. (2022)
     """
@@ -125,6 +126,7 @@ def plot_switching_by_symbol(AllTrials, doShow=True, wordOrder=None):
         words = wordOrder
     counts = {word: (0,0) for word in words}
     wordLength = len(words[0])
+    all_switches = []
 
     # counts per model
     for trials in AllTrials:
@@ -136,15 +138,26 @@ def plot_switching_by_symbol(AllTrials, doShow=True, wordOrder=None):
                 continue
             csymbs = symbs[i:(i+wordLength+1)]
             curWord = toWord(''.join(csymbs))
-            didSwitch = csymbs[-1].upper() != csymbs[-2].upper()
-            cur = (curWord[:-1], didSwitch)
+            if modelBased:
+                curQ = ctrials[-1].Q[-1]
+                lastAction = ctrials[-2].A[-1]
+                if tau is None:
+                    modelAction = np.argmax(curQ)
+                    switchProb = modelAction != lastAction
+                else:
+                    modelProbs = torch.softmax(torch.Tensor(curQ)/tau, dim=-1).numpy()
+                    switchProb = 1 - modelProbs[lastAction]
+            else:
+                switchProb = float(csymbs[-1].upper() != csymbs[-2].upper())
+            cur = (curWord[:-1], switchProb)
             switches.append(cur)
 
-        for (word, didSwitch) in switches:
+        for (word, switchProb) in switches:
             if word not in counts:
                 counts[word] = (0,0)
             c,n = counts[word]
-            counts[word] = (c + int(didSwitch), n+1)
+            counts[word] = (c + switchProb, n+1)
+        all_switches.append(switches)
 
     # tally averages
     freqs = [(word, vals[0]/vals[1] if vals[1] > 0 else 0, vals[1]) for word, vals in counts.items()]
@@ -169,6 +182,7 @@ def plot_switching_by_symbol(AllTrials, doShow=True, wordOrder=None):
     plt.tight_layout()
     if doShow:
         plt.show()
+    return freqs, all_switches
 
 def plot_decoding_weights(weights, std_errors, names, ylim=None, doShow=True):
     plt.figure(figsize=(len(names)/2,1.5))
