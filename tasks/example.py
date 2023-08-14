@@ -9,7 +9,7 @@ class ExampleNABT(gym.Env):
         where decisions are separated by a random intertrial interval
     """
     def __init__(self, ntrials, reward_probs=(0.8, 0.4)):
-        self.observation_space = spaces.Discrete(1) # 0 during ITI, 1 during ISI
+        self.observation_space = spaces.Discrete(2) # 0 during ITI, 1 during ISI
         self.action_space = spaces.Discrete(len(reward_probs)) # action choices
         self.reward_probs = reward_probs # reward probabilities for each action
         self.ntrials = ntrials # total number of trials in episode

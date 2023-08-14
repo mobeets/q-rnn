@@ -60,7 +60,6 @@ class DRQN(nn.Module):
     def load_weights_from_path(self, path):
         self.load_state_dict(torch.load(path))
 
-
     def initialize(self, gain=1):
         """
         https://github.com/rodrigorivera/mds20_replearning/blob/0426340725fd55a616b0d40356ddcebe06ed0f24/skip_thought_vectors/encoder.py

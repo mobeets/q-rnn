@@ -9,7 +9,7 @@ class Beron2022(gym.Env):
     def __init__(self, p_rew_max=0.8, p_switch=0.02, ntrials=100,
                  iti_min=0, iti_p=0.25, iti_max=0, iti_dist='geometric',
                  include_null_action=False, abort_penalty=0):
-        self.observation_space = spaces.Discrete(1) # 0 during ITI, 1 during ISI
+        self.observation_space = spaces.Discrete(2) # 0 during ITI, 1 during ISI
         self.action_space = spaces.Discrete(2 + include_null_action) # left port, right port, null [optional]
         self.include_null_action = include_null_action
         self.p_rew_max = p_rew_max # max prob of reward; should be in [0.5, 1.0]

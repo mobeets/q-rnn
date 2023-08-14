@@ -32,12 +32,13 @@ from plotting.behavior import plot_example_actions, plot_average_actions_around_
 from analysis.decoding_beron import get_rnn_decoding_weights, get_mouse_decoding_weights, load_mouse_data
 from plotting.behavior import plot_decoding_weights, mouseWordOrder
 
-epsilon = None; tau = 0.000001
+epsilon = 0; tau = None
 ntrials = 10000
-fnms = glob.glob(os.path.join('data', 'models', '*granasoft*.json')) # 'grant': trial-level, 'granz': timestep-level; 'grans': H=2 timestep-evel; 'granasoft': H=10 trial-level w/ softmax
+
+fnms = glob.glob(os.path.join('data', 'models', '*granb*.json')) # 'grant': trial-level, 'granz': timestep; 'grans': H=2 timestep; 'granasoft': H=10 trial-level w/ softmax
 AllTrials = []
 AllTrialsRand = []
-for fnm in fnms[-1:]:
+for fnm in fnms:
     Trials, Trials_rand, _, _ = eval_model(fnm, ntrials, epsilon, tau)
     AllTrials.append(Trials)
     AllTrialsRand.append(Trials_rand)

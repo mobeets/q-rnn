@@ -1,7 +1,5 @@
 import numpy as np
-import gymnasium as gym
-from gymnasium import Wrapper
-from gymnasium.spaces import Box, Discrete
+from gymnasium import Wrapper, spaces
 
 class PreviousActionWrapper(Wrapper):
     """
@@ -9,14 +7,22 @@ class PreviousActionWrapper(Wrapper):
     """
     def __init__(self, env, nactions):
         super().__init__(env)
-        self.observation_space = None # todo
+        obs = env.observation_space
+        if type(obs) is spaces.Discrete:
+            self.observation_space = spaces.Box(low=np.array([0] + [0]*nactions),
+                                                high=np.array([obs.n] + [1]*nactions))
+        elif type(obs) is spaces.Box:
+            self.observation_space = spaces.Box(low=np.array(list(obs.low) + [0]*nactions),
+                                                high=np.array(list(obs.high) + [1]*nactions))
+        else:
+            raise Exception("Need to implement observation_space for PreviousActionWrapper")
         self.nactions = nactions
         self.last_action = None
     
     def observation(self, obs):
         ac = np.zeros(self.nactions)
         if self.last_action is not None:
-            ac[self.last_action] = 1.
+            ac[self.last_action] = 1
         return np.hstack([obs, ac])
     
     def reset(self, **kwargs):
@@ -36,7 +42,12 @@ class PreviousRewardWrapper(Wrapper):
     """
     def __init__(self, env, initial_prev_reward=0):
         super().__init__(env)
-        self.observation_space = None # todo
+        if type(env.observation_space) is spaces.Discrete:
+            self.observation_space = spaces.Box(low=[0,-np.inf],
+                                                high=[env.observation_space.n, np.inf],
+                                                shape=(1 + 1,))
+        else:
+            raise Exception("Need to implement observation_space for PreviousRewardWrapper")
         self.initial_prev_reward = initial_prev_reward
         self.last_reward = initial_prev_reward
     
