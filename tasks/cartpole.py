@@ -13,6 +13,35 @@ from gymnasium import logger, spaces
 from gymnasium.envs.classic_control import utils
 from gymnasium.error import DependencyNotInstalled
 
+def cartpole_step(self, state, action):
+    x, x_dot, theta, theta_dot = state
+    force = self.force_mag if action == 1 else -self.force_mag
+    costheta = math.cos(theta)
+    sintheta = math.sin(theta)
+
+    # For the interested reader:
+    # https://coneural.org/florian/papers/05_cart_pole.pdf
+    temp = (
+        force + self.polemass_length * theta_dot**2 * sintheta
+    ) / self.total_mass
+    thetaacc = (self.gravity * sintheta - costheta * temp) / (
+        self.length * (4.0 / 3.0 - self.masspole * costheta**2 / self.total_mass)
+    )
+    xacc = temp - self.polemass_length * thetaacc * costheta / self.total_mass
+
+    if self.kinematics_integrator == "euler":
+        x = x + self.tau * x_dot
+        x_dot = x_dot + self.tau * xacc
+        theta = theta + self.tau * theta_dot
+        theta_dot = theta_dot + self.tau * thetaacc
+    else:  # semi-implicit euler
+        x_dot = x_dot + self.tau * xacc
+        x = x + self.tau * x_dot
+        theta_dot = theta_dot + self.tau * thetaacc
+        theta = theta + self.tau * theta_dot
+
+    return (x, x_dot, theta, theta_dot)
+
 class CartPoleEnv(gym.Env[np.ndarray, Union[int, np.ndarray]]):
     """
     ### Description
@@ -313,8 +342,7 @@ class CartPoleEnv(gym.Env[np.ndarray, Union[int, np.ndarray]]):
 class StatelessCartPole(CartPoleEnv):
     """Partially observable variant of the CartPole gym environment.
 
-    https://github.com/openai/gym/blob/master/gym/envs/classic_control/
-    cartpole.py
+    https://github.com/openai/gym/blob/master/gym/envs/classic_control/cartpole.py
 
     We delete the x- and angular velocity components of the state, so that it
     can only be solved by a memory enhanced model (policy).
@@ -373,5 +401,6 @@ class DelayedStatelessCartpole(StatelessCartPole):
             self.last_obs.append(obs)
         else:
             cur_obs = obs
+        info.update({'state': obs})
 
         return cur_obs, reward, terminated, truncated, info
