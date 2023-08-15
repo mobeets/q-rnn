@@ -381,20 +381,9 @@ class DelayedStatelessCartpole(StatelessCartPole):
         super().__init__()
         self.max_timesteps_per_episode = config.get('max_timesteps_per_episode', 500)
         self.delay = config.get('delay', 0)
-
         self.initial_obs = np.zeros(self.observation_space.shape[0])
-        self.last_obs = [self.initial_obs]*self.delay
 
-    def reset(self, seed=None, options=None):
-        self.t = 0
-        return super().reset(seed=seed, options=options)
-    
-    def step(self, action):
-        obs, reward, terminated, truncated, info = super().step(action)
-        self.t += 1
-        if self.t > self.max_timesteps_per_episode:
-            terminated = True
-
+    def update(self, obs, info):
         # update observation queue
         if self.delay > 0:
             cur_obs = self.last_obs.pop(0) # current obs, given delay
@@ -402,5 +391,18 @@ class DelayedStatelessCartpole(StatelessCartPole):
         else:
             cur_obs = obs
         info.update({'state': obs})
+        return cur_obs, info
 
-        return cur_obs, reward, terminated, truncated, info
+    def reset(self, seed=None, options=None):
+        obs, info = super().reset(seed=seed, options=options)
+        self.t = 0
+        self.last_obs = [self.initial_obs]*self.delay
+        return self.update(obs, info)
+    
+    def step(self, action):
+        obs, reward, terminated, truncated, info = super().step(action)
+        self.t += 1
+        if self.t > self.max_timesteps_per_episode:
+            terminated = True
+        obs, info = self.update(obs, info)
+        return obs, reward, terminated, truncated, info

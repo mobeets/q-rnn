@@ -72,18 +72,20 @@ plt.plot([get_score(x) for x in outputs])
 
 # algo.restore(checkpoints[-2])
 delays = list(np.arange(6))
+# delays = [2]
 # delays = [env_config['delay']]
 
+explore = False
 nepisodes = 100
 perfs = []
 AllTrials = {}
 
 for delay in delays:
-    env_config = {'delay': delay}
-    env = DelayedStatelessCartpole(**env_config)
+    env = DelayedStatelessCartpole(**{'delay': delay})
+    # algo.get_policy().view_requirements['prev_actions'].shift = -1 - delay
 
     Trials = []
-    for _ in range(nepisodes):
+    for j in range(nepisodes):
         terminated = truncated = False
         obs, info = env.reset()
 
@@ -94,17 +96,15 @@ for delay in delays:
         trials = []
         i = 0
         while not terminated and not truncated:
-            # action, state, _ = algo.compute_single_action(obs, state=state)
-            action, state, _ = algo.compute_single_action(obs, prev_action=action, state=state)
-            # action, state, _ = algo.compute_single_action(obs, prev_action=action, prev_reward=reward, state=state)
-            obs, reward, terminated, truncated, info = env.step(action)
+            action, state, q_info = algo.compute_single_action(obs,
+                    prev_action=action if config.model['lstm_use_prev_action'] else None,
+                    state=state, explore=explore)
+            new_obs, reward, terminated, truncated, info = env.step(action)
             trials.append((obs, state, action, reward, info))
+            obs = new_obs
             i += 1
-
+        
         Trials.append(trials)
-        # plt.plot(np.vstack([(trial[0][0], np.rad2deg(trial[0][1])) for trial in trials]))
-        # plt.plot(np.vstack([trial[1][0] for trial in trials]))
-
     AllTrials[delay] = Trials
     rews = [np.sum([trial[-2] for trial in trials]) for trials in Trials]
     mu = np.mean(rews)
@@ -121,6 +121,19 @@ plt.ylim([0,1.01*env.max_timesteps_per_episode])
 plt.xlabel('delay')
 plt.ylabel('mean episode duration')
 
+#%% visualize trjaectories
+
+from sklearn.decomposition import PCA
+Z = np.vstack([zs[0] for trials in AllTrials[2] for o,zs,a,r,i in trials])
+pca = PCA(n_components=Z.shape[1])
+pca.fit(Z)
+
+for trials in AllTrials[2][:10]:
+    z = np.vstack([zs[0] for o,zs,a,r,i in trials])
+    z = pca.transform(z)
+    h = plt.plot(z[:,0], z[:,1], '.-', alpha=0.5)
+    plt.plot(z[0,0], z[0,1], '+', color=h[0].get_color())
+
 #%% use latent LSTM activity to regress predictive state representations
 
 delays = list(range(10))
@@ -128,7 +141,16 @@ useCellState = False
 Pts = {delay: ([], [], []) for delay in delays}
 
 Trials = AllTrials[env_config['delay']] # get rollouts using the environment with matching delay
-# Trials = AllTrials[3] # get rollouts using the environment with matching delay
+Trials = AllTrials[2] # get rollouts using the environment with matching delay
+
+# train: delay=3
+# O[t] = S[t-3]
+# Z[t] = f(O[t]) = f(S[t-3]) ≈ S[t] = O[t+3]
+# 
+# test: exp delay=2, test delay=τ
+# X_z[t] := Z[t] = f(O[t]) = f(S[t-2]) ≈ S[t] = O[t+2]
+# X_s[t] := S[t] = O[t+2]
+# Y[t] := O[t+2] = S[t]
 
 for i, trials in enumerate(Trials):
     X = []
@@ -148,12 +170,14 @@ for i, trials in enumerate(Trials):
     for delay in delays:
         Xc = X if delay == 0 else X[:-delay]
         Yc = Y[delay:]
+        # if delay == 2:
+        #     assert np.isclose(Xc, Yc).all()
         ixTrainc = np.array([isTrainTrial]*len(Yc))
         Pts[delay][0].append(Xc)
         Pts[delay][1].append(Yc)
         Pts[delay][2].append(ixTrainc)
 for delay, (X, Y, I) in Pts.items():
-    Pts[delay] = (np.vstack(X), np.vstack(Y), np.hstack(I))
+    Pts[delay] = (np.vstack(X), np.vstack(Y), np.hstack(I).astype(bool))
 
 from analysis.correlations import linreg_fit, linreg_eval
 def linreg(X, Y, ix):
@@ -163,6 +187,7 @@ def linreg(X, Y, ix):
 
 pts = []
 for delay, (X, Y, ixTrain) in Pts.items():
+    # use LSTM's activity at time (t-delay) to predict state at time t
     mdl, res = linreg(X, Y, ixTrain)
     pts.append((delay, res['rsq']))
 pts = np.vstack(pts)
@@ -171,3 +196,4 @@ plt.plot(pts[:,0], pts[:,1], 'ko')
 plt.plot(env_config['delay']*np.ones(2), plt.ylim(), 'k--', zorder=-1, linewidth=1, alpha=0.5)
 plt.xlabel('delay')
 plt.ylabel('$R^2$')
+plt.ylim([-0.03,1.03])
