@@ -10,7 +10,7 @@ from tasks.cartpole import DelayedStatelessCartpole
 
 #%% initialize model
 
-env_config = {'delay': 3}
+env_config = {'delay': 0}
 env_name = 'stateless-cartpole'
 register_env(env_name, lambda env_config: DelayedStatelessCartpole(**env_config))
 
@@ -31,7 +31,7 @@ config.model['max_seq_len'] = 20
 config.model['fcnet_hiddens'] = [64]
 config.model['fcnet_activation'] = 'linear'
 config.replay_buffer_config['replay_burn_in'] = 20
-config.evaluation_duration = 10; config.evaluation_interval = 1 # evaluate using 1 episode every episode
+config.evaluation_duration = 10; config.evaluation_interval = 1 # evaluate using 10 episodes every episode
 
 algo = config.build()
 print(algo.get_policy().model)
@@ -58,8 +58,8 @@ for i in range(300):
         checkpoints.append(checkpoint_dir)
         print("Saved checkpoint to {}.".format(checkpoint_dir))
 
-print('Best score: {}\n    Checkpoint: '.format(best_score, checkpoints[-1]))
 checkpoints.append(algo.save())
+print('Best score: {}\n    Checkpoint: '.format(best_score, checkpoints[-2]))
 # algo.restore(checkpoints[-2]) # restore best scoring model
 
 plt.plot([get_score(x) for x in outputs])
@@ -70,11 +70,11 @@ plt.plot([get_score(x) for x in outputs])
 
 #%% rollout
 
-# algo.restore(checkpoints[-2])
+algo.restore(checkpoints[-2])
 delays = list(np.arange(6))
-# delays = [2]
 # delays = [env_config['delay']]
 
+randomPolicy = True
 explore = False
 nepisodes = 100
 perfs = []
@@ -82,7 +82,6 @@ AllTrials = {}
 
 for delay in delays:
     env = DelayedStatelessCartpole(**{'delay': delay})
-    # algo.get_policy().view_requirements['prev_actions'].shift = -1 - delay
 
     Trials = []
     for j in range(nepisodes):
@@ -99,6 +98,8 @@ for delay in delays:
             action, state, q_info = algo.compute_single_action(obs,
                     prev_action=action if config.model['lstm_use_prev_action'] else None,
                     state=state, explore=explore)
+            if randomPolicy:
+                action = int(np.random.rand() < 0.5)
             new_obs, reward, terminated, truncated, info = env.step(action)
             trials.append((obs, state, action, reward, info))
             obs = new_obs
@@ -124,15 +125,17 @@ plt.ylabel('mean episode duration')
 #%% visualize trjaectories
 
 from sklearn.decomposition import PCA
-Z = np.vstack([zs[0] for trials in AllTrials[2] for o,zs,a,r,i in trials])
+Z = np.vstack([zs[0] for trials in AllTrials[3] for o,zs,a,r,i in trials])
 pca = PCA(n_components=Z.shape[1])
 pca.fit(Z)
+plt.plot(pca.explained_variance_ratio_[:10], '.-')
+plt.ylim([0,1])
 
-for trials in AllTrials[2][:10]:
-    z = np.vstack([zs[0] for o,zs,a,r,i in trials])
-    z = pca.transform(z)
-    h = plt.plot(z[:,0], z[:,1], '.-', alpha=0.5)
-    plt.plot(z[0,0], z[0,1], '+', color=h[0].get_color())
+# for trials in AllTrials[2][:10]:
+#     z = np.vstack([zs[0] for o,zs,a,r,i in trials])
+#     z = pca.transform(z)
+#     h = plt.plot(z[:,0], z[:,1], '-', alpha=0.5, linewidth=1)
+#     plt.plot(z[0,0], z[0,1], '+', color=h[0].get_color())
 
 #%% use latent LSTM activity to regress predictive state representations
 
@@ -141,7 +144,7 @@ useCellState = False
 Pts = {delay: ([], [], []) for delay in delays}
 
 Trials = AllTrials[env_config['delay']] # get rollouts using the environment with matching delay
-Trials = AllTrials[2] # get rollouts using the environment with matching delay
+Trials = AllTrials[3] # get rollouts using the environment with matching delay
 
 # train: delay=3
 # O[t] = S[t-3]
@@ -197,3 +200,5 @@ plt.plot(env_config['delay']*np.ones(2), plt.ylim(), 'k--', zorder=-1, linewidth
 plt.xlabel('delay')
 plt.ylabel('$R^2$')
 plt.ylim([-0.03,1.03])
+
+# %%
