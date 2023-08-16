@@ -1,14 +1,16 @@
 import pygame
 from tasks.catch import CatchEnv
 
-actor_mode = 'random'
+actor_mode = 'model'
 render_mode = 'human'
-nepisodes = 20
-env = CatchEnv(render_mode=render_mode)
+nepisodes = 10
+env = CatchEnv(render_mode=render_mode, gravity=0)
 
 #%% load model, if necessary
 
 checkpoint = '/Users/mobeets/ray_results/R2D2_catch_2023-08-15_13-57-463xretgkc/checkpoint_000053'
+checkpoint = '/Users/mobeets/ray_results/R2D2_catch_2023-08-15_15-31-59iltng9hq/checkpoint_000007'
+checkpoint = '/Users/mobeets/ray_results/R2D2_catch_2023-08-16_10-26-26s182jgc3/checkpoint_000148' # gravity=0
 
 if actor_mode == 'model':
     from ray.rllib.algorithms import r2d2
@@ -25,7 +27,7 @@ if actor_mode == 'model':
     config.gamma = 1
     config.exploration_config['initial_epsilon'] = 1.0
     config.exploration_config['final_epsilon'] = 0.0
-    config.exploration_config['epsilon_timesteps'] = 50000 # divide by 1000 to get number of batches
+    config.exploration_config['epsilon_timesteps'] = 100000 # divide by 1000 to get number of batches
     # config.dueling = False
     # config.hiddens = []
     config.model['use_lstm'] = True
@@ -52,13 +54,20 @@ for _ in range(nepisodes):
     while not (terminated or truncated):
         if actor_mode == 'human':
             action = 2 # default to no action
-            events = pygame.event.get()
-            for event in events:
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_UP:
-                        action = 1
-                    if event.key == pygame.K_DOWN:
-                        action = 0
+            keys = pygame.key.get_pressed()
+            if keys[pygame.K_UP]:
+                action = 1
+            elif keys[pygame.K_DOWN]:
+                action = 0
+            else:
+                action = 2
+            # events = pygame.event.get()
+            # for event in events:
+            #     if event.type == pygame.KEYDOWN:
+            #         if event.key == pygame.K_UP:
+            #             action = 1
+            #         if event.key == pygame.K_DOWN:
+            #             action = 0
         elif actor_mode == 'model':
             action, state, q_info = algo.compute_single_action(obs,
                 prev_action=action if config.model['lstm_use_prev_action'] else None,

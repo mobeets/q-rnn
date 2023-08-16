@@ -8,12 +8,12 @@ class CatchEnv(gym.Env):
         "render_modes": ["human", "rgb_array"],
         "render_fps": 50,
     }
-    def __init__(self, tau=0.01, render_mode=None):
-        self.gravity = 9.8
+    def __init__(self, tau=0.01, gravity=2000, render_mode=None):
+        self.gravity = gravity
         self.action_space = spaces.Discrete(3) # up, down, stay
         self.screen_width = 800
         self.screen_height = 600
-        self.hand_length = 50
+        self.hand_length = 100
         self.hand_step = 15
         self.tau = tau # seconds between state updates
         self.observation_space = spaces.Box(low=np.array([0, 0, self.screen_width, 0]),
@@ -35,13 +35,17 @@ class CatchEnv(gym.Env):
         r_max = 1600
         r_min = 1500
         r = r*(r_max-r_min) + r_min
-        # r /= 2
         theta = 40*theta # angle will be between 0 and 40
+
+        if self.gravity == 0:
+            r = 1500
+            theta -= 20
+
         self.state = {
             'ball': obs[:2],
             'hand': obs[2:],
             'vel': r*np.array([np.cos(np.deg2rad(theta)), np.sin(np.deg2rad(theta))]),
-            'accel': np.array([0, -200*self.gravity]),
+            'accel': np.array([0, -self.gravity]),
             't': 0,
             }
 
@@ -78,6 +82,7 @@ class CatchEnv(gym.Env):
         super().reset(seed=seed)
         if seed is not None:
             self.rng_state = default_rng(seed+1)
+        self.rewarded = False
         self._init_state()
         obs = self._get_obs()
         info = self._get_info()
@@ -88,9 +93,9 @@ class CatchEnv(gym.Env):
     def step(self, action):
         self._update_state(action)
         if self.state['ball'][0] >= self.state['hand'][0]:
-            caught = self._is_hit()
-            reward = 1.0 if caught else -1.0
+            reward = 1.0 if self._is_hit() else -1.0
             terminated = True
+            self.rewarded = reward > 0
         else:
             reward = 0.0
             terminated = False
@@ -143,12 +148,21 @@ class CatchEnv(gym.Env):
             (129, 132, 203),
         )
 
+        if self.rewarded:
+            gfxdraw.filled_circle(
+                self.surf,
+                300,
+                300,
+                50,
+                (200, 0, 0),
+            )
+
         # draw hand
         hand_pos = self.state['hand'].astype(int)
-        ul = (hand_pos[0]-5, hand_pos[1]+self.hand_length)
-        ur = (hand_pos[0]+5, hand_pos[1]+self.hand_length)
-        br = (hand_pos[0]+5, hand_pos[1]-self.hand_length)
-        bl = (hand_pos[0]-5, hand_pos[1]-self.hand_length)
+        ul = (hand_pos[0]-5, hand_pos[1]+self.hand_length/2)
+        ur = (hand_pos[0]+5, hand_pos[1]+self.hand_length/2)
+        br = (hand_pos[0]+5, hand_pos[1]-self.hand_length/2)
+        bl = (hand_pos[0]-5, hand_pos[1]-self.hand_length/2)
         lcolor = (250, 0, 0) if self._is_hit() else (0, 0, 0)
         gfxdraw.filled_polygon(self.surf, (ul, ur, br, bl), lcolor)
 
