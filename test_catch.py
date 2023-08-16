@@ -76,15 +76,7 @@ def simulate(args):
             obs, reward, terminated, truncated, info = env.step(action)
     env.close()
 
-checkpoint = '/Users/mobeets/ray_results/R2D2_catch_2023-08-15_13-57-463xretgkc/checkpoint_000053'
-checkpoint = '/Users/mobeets/ray_results/R2D2_catch_2023-08-15_15-31-59iltng9hq/checkpoint_000007'
-checkpoint = '/Users/mobeets/ray_results/R2D2_catch_2023-08-16_10-26-26s182jgc3/checkpoint_000148' # gravity=0
-checkpoint = '/Users/mobeets/ray_results/R2D2_catch_2023-08-16_10-54-090n7fr1w6/checkpoint_000013'
-checkpoint = '/Users/mobeets/ray_results/R2D2_catch_2023-08-16_11-08-579n2xk7ie/checkpoint_000154'
-checkpoint = '/Users/mobeets/ray_results/R2D2_catch_2023-08-16_11-48-3843hz81xd/checkpoint_000186'
-checkpoint = '/Users/mobeets/ray_results/R2D2_catch_2023-08-16_12-43-26kqaqwnmv/checkpoint_000003'
-checkpoint = '/Users/mobeets/ray_results/R2D2_catch_2023-08-16_12-48-10nk64ocx3/checkpoint_000096'
-checkpoint = '/Users/mobeets/ray_results/R2D2_catch_2023-08-16_14-12-388mdkeyso/checkpoint_000096'
+checkpoint = '/Users/mobeets/ray_results/R2D2_catch_2023-08-16_14-38-09vxvmv5b8/checkpoint_000162'
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

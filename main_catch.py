@@ -5,12 +5,12 @@ from plotting.base import plt
 import gymnasium as gym
 from ray.rllib.algorithms import r2d2
 from ray.tune.registry import register_env
-from tasks.catch import CatchEnv, NormalizedInputs
+from tasks.catch import DelayedCatchEnv
 
 #%% view env
 
 render_mode = None
-env = CatchEnv(render_mode=render_mode, gravity=0)
+env = DelayedCatchEnv(render_mode=render_mode, gravity=0, delay=0)
 
 nepisodes = 2000
 X = []
@@ -37,11 +37,10 @@ plt.hist(ends, np.arange(0, env.screen_height,20), alpha=0.4)
 #%% initialize model
 
 use_custom_model = False
-env_config = {'gravity': 0, 'tau': 0.015, 'action_penalty': 0}
+env_config = {'gravity': 0, 'tau': 0.015, 'action_penalty': 0, 'delay': 2}
 
 env_name = 'catch'
-# register_env(env_name, lambda env_config: CatchEnv(**env_config))
-register_env(env_name, lambda env_config: NormalizedInputs(CatchEnv(**env_config)))
+register_env(env_name, lambda env_config: DelayedCatchEnv(**env_config))
 
 config = r2d2.R2D2Config()
 config = config.environment(env_name, env_config=env_config)
@@ -81,7 +80,7 @@ best_score = -np.inf
 checkpoints = []
 
 get_score = lambda x: x['evaluation']['episode_reward_mean'] if 'evaluation' in x else x['episode_reward_mean']
-for i in range(200):
+for i in range(2):
     output = algo.train()
     outputs.append(output)
 
@@ -109,7 +108,7 @@ algo.restore(checkpoints[-2])
 explore = False
 nepisodes = 100
 
-env = CatchEnv(**env_config)
+env = DelayedCatchEnv(**env_config)
 
 Trials = []
 for j in range(nepisodes):
@@ -139,7 +138,7 @@ print(np.mean([trials[-1][-2] for trials in Trials]))
 for i, trials in enumerate(Trials):
     ball = np.vstack([trial[-1]['ball'][1] for trial in trials])
     hand = np.vstack([trial[-1]['hand'][1] for trial in trials])
-    if i == 19:
+    if i == 33:
         plt.plot(ball)
         plt.plot(hand)
         [plt.plot(x*np.ones(2), y + np.array([-1,1])*env.hand_length/2, 'k-', alpha=0.1, linewidth=1, zorder=-1) for x,y in enumerate(hand)]

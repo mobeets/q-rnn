@@ -3,16 +3,6 @@ from gymnasium import spaces
 import numpy as np
 from numpy.random import default_rng
 
-class NormalizedInputs(gym.core.ObservationWrapper):
-    def __init__(self, env):
-        super().__init__(env)
-        self.observation_space = spaces.Box(low=-1, high=1, shape=(3,))
-
-    def observation(self, obs):
-        low = self.env.observation_space.low
-        high = self.env.observation_space.high
-        return 2*(obs-low)/(high-low) - 1 # normalized between -1 and 1
-
 class CatchEnv(gym.Env):
     metadata = {
         "render_modes": ["human", "rgb_array"],
@@ -27,10 +17,7 @@ class CatchEnv(gym.Env):
         self.hand_step = 15
         self.action_penalty = action_penalty # penalty per movement
         self.tau = tau # seconds between state updates
-        # self.observation_space = spaces.Box(low=np.array([0, 0, self.screen_width, 0]),
-        #     high=np.array([self.screen_width, self.screen_height, self.screen_width, self.screen_height])) # ball and hand positions
-        self.observation_space = spaces.Box(low=np.array([0, 0, 0]),
-            high=np.array([self.screen_width, self.screen_height, self.screen_height])) # ball and hand positions
+        self.observation_space = spaces.Box(low=-1, high=1, shape=(3,)) # (ball xpos, ball ypos, hand ypos)
         self.state = {}
         self.rng_state = default_rng()
         self.render_mode = render_mode
@@ -41,8 +28,6 @@ class CatchEnv(gym.Env):
         obs = self.observation_space.sample()
         obs[0] = 0 # ball starts on left of screen
         obs[1] = self.screen_height/2 # ball starts halfway up
-        # obs[2] = self.screen_width # hand is on right of screen
-        # obs[3] = self.screen_height/2 # hand starts halfway up
         obs[2] = self.screen_height/2 # hand starts halfway up
         
         if self.gravity == 0:
@@ -93,8 +78,11 @@ class CatchEnv(gym.Env):
         return {key: val.copy() if type(val) is not int else val for key, val in self.state.items()}
     
     def _get_obs(self):
-        # return np.hstack([self.state['ball'], self.state['hand']])
-        return np.hstack([self.state['ball'], self.state['hand'][1:]])
+        """ return observations, normalized between -1 and 1 """
+        obs = np.hstack([self.state['ball'], self.state['hand'][1:]])
+        low = np.zeros(3)
+        high = np.array([self.screen_width, self.screen_height, self.screen_height])
+        return 2*(obs-low)/(high-low) - 1 # normalize between -1 and 1
     
     def _is_hit(self):
         if self.state['ball'][0] < self.state['hand'][0]-1:
@@ -195,3 +183,32 @@ class CatchEnv(gym.Env):
             pygame.display.quit()
             pygame.quit()
             self.isopen = False
+
+class DelayedCatchEnv(CatchEnv):
+    """
+    Just like the Catch environment, except each observation is delayed by a fixed number of timesteps.
+    """
+    def __init__(self, **config):
+        super().__init__()
+        self.delay = config.get('delay', 0)
+        self.initial_obs = np.zeros(self.observation_space.shape[0])
+
+    def update(self, obs, info):
+        # update observation queue
+        if self.delay > 0:
+            cur_obs = self.last_obs.pop(0) # current obs, given delay
+            self.last_obs.append(obs)
+        else:
+            cur_obs = obs
+        info.update({'state': obs})
+        return cur_obs, info
+
+    def reset(self, seed=None, options=None):
+        obs, info = super().reset(seed=seed, options=options)
+        self.last_obs = [self.initial_obs]*self.delay
+        return self.update(obs, info)
+    
+    def step(self, action):
+        obs, reward, terminated, truncated, info = super().step(action)
+        obs, info = self.update(obs, info)
+        return obs, reward, terminated, truncated, info
