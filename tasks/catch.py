@@ -3,21 +3,34 @@ from gymnasium import spaces
 import numpy as np
 from numpy.random import default_rng
 
+class NormalizedInputs(gym.core.ObservationWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.observation_space = spaces.Box(low=-1, high=1, shape=(3,))
+
+    def observation(self, obs):
+        low = self.env.observation_space.low
+        high = self.env.observation_space.high
+        return 2*(obs-low)/(high-low) - 1 # normalized between -1 and 1
+
 class CatchEnv(gym.Env):
     metadata = {
         "render_modes": ["human", "rgb_array"],
         "render_fps": 50,
     }
-    def __init__(self, tau=0.01, gravity=2000, render_mode=None):
+    def __init__(self, tau=0.025, gravity=0, action_penalty=0.0005, render_mode=None):
         self.gravity = gravity
-        self.action_space = spaces.Discrete(3) # up, down, stay
+        self.action_space = spaces.Discrete(3) # stay, down, up
         self.screen_width = 800
         self.screen_height = 600
         self.hand_length = 100
         self.hand_step = 15
+        self.action_penalty = action_penalty # penalty per movement
         self.tau = tau # seconds between state updates
-        self.observation_space = spaces.Box(low=np.array([0, 0, self.screen_width, 0]),
-            high=np.array([self.screen_width, self.screen_height, self.screen_width, self.screen_height])) # ball and hand positions
+        # self.observation_space = spaces.Box(low=np.array([0, 0, self.screen_width, 0]),
+        #     high=np.array([self.screen_width, self.screen_height, self.screen_width, self.screen_height])) # ball and hand positions
+        self.observation_space = spaces.Box(low=np.array([0, 0, 0]),
+            high=np.array([self.screen_width, self.screen_height, self.screen_height])) # ball and hand positions
         self.state = {}
         self.rng_state = default_rng()
         self.render_mode = render_mode
@@ -28,22 +41,30 @@ class CatchEnv(gym.Env):
         obs = self.observation_space.sample()
         obs[0] = 0 # ball starts on left of screen
         obs[1] = self.screen_height/2 # ball starts halfway up
-        obs[2] = self.screen_width # hand is on right of screen
-        obs[3] = self.screen_height/2 # hand starts halfway up
+        # obs[2] = self.screen_width # hand is on right of screen
+        # obs[3] = self.screen_height/2 # hand starts halfway up
+        obs[2] = self.screen_height/2 # hand starts halfway up
         
-        r, theta = self.rng_state.random(2)
-        r_max = 1600
-        r_min = 1500
-        r = r*(r_max-r_min) + r_min
-        theta = 40*theta # angle will be between 0 and 40
-
         if self.gravity == 0:
             r = 1500
-            theta -= 20
+            obs[1] = self.rng_state.random(1)*(self.screen_height/2) + self.screen_height/4
+            # choose angles so that every final point is possible
+            y_max = self.screen_height - obs[1] - self.hand_length/2
+            y_min = -obs[1] + self.hand_length/2
+            theta_min = np.arctan2(y_max, self.screen_width) * 180 / np.pi
+            theta_max = np.arctan2(y_min, self.screen_width) * 180 / np.pi
+            theta = self.rng_state.random(1)[0]*(theta_max - theta_min) + theta_min
+        else:
+            r, theta = self.rng_state.random(2)
+            r_max = 1600
+            r_min = 1500
+            r = r*(r_max-r_min) + r_min
+            theta = 40*theta # angle will be between 0 and 40
 
         self.state = {
             'ball': obs[:2],
-            'hand': obs[2:],
+            # 'hand': obs[2:],
+            'hand': np.array([self.screen_width, obs[2]]),
             'vel': r*np.array([np.cos(np.deg2rad(theta)), np.sin(np.deg2rad(theta))]),
             'accel': np.array([0, -self.gravity]),
             't': 0,
@@ -57,8 +78,9 @@ class CatchEnv(gym.Env):
         self.state['t'] += 1
 
         # update hand position
-        if action != 2:
-            self.state['hand'][1] += self.hand_step*(2*action - 1)
+        if action != 0:
+            self.nactions += 1
+            self.state['hand'][1] += self.hand_step*(2*(action-1) - 1)
         self.constrain_hand()
 
     def constrain_hand(self):
@@ -68,10 +90,11 @@ class CatchEnv(gym.Env):
             self.state['hand'][1] = self.screen_height
 
     def _get_info(self):
-        return self.state
+        return {key: val.copy() if type(val) is not int else val for key, val in self.state.items()}
     
     def _get_obs(self):
-        return np.hstack([self.state['ball'], self.state['hand']])
+        # return np.hstack([self.state['ball'], self.state['hand']])
+        return np.hstack([self.state['ball'], self.state['hand'][1:]])
     
     def _is_hit(self):
         if self.state['ball'][0] < self.state['hand'][0]-1:
@@ -82,7 +105,7 @@ class CatchEnv(gym.Env):
         super().reset(seed=seed)
         if seed is not None:
             self.rng_state = default_rng(seed+1)
-        self.rewarded = False
+        self.nactions = 0
         self._init_state()
         obs = self._get_obs()
         info = self._get_info()
@@ -95,18 +118,20 @@ class CatchEnv(gym.Env):
         if self.state['ball'][0] >= self.state['hand'][0]:
             reward = 1.0 if self._is_hit() else -1.0
             terminated = True
-            self.rewarded = reward > 0
         else:
             reward = 0.0
             terminated = False
         truncated = False
+
+        if action != 0:
+            reward -= self.action_penalty
 
         obs = self._get_obs()
         info = self._get_info()
         
         if self.state['ball'][0] < 0 or self.state['ball'][0] > self.screen_width or self.state['ball'][1] < 0 or self.state['ball'][1] > self.screen_height:
             terminated = True
-            obs *= 0; obs[2] = self.screen_width
+            obs *= 0;# obs[2] = self.screen_width
 
         if self.render_mode == "human":
             self.render()
@@ -147,15 +172,6 @@ class CatchEnv(gym.Env):
             10,
             (129, 132, 203),
         )
-
-        if self.rewarded:
-            gfxdraw.filled_circle(
-                self.surf,
-                300,
-                300,
-                50,
-                (200, 0, 0),
-            )
 
         # draw hand
         hand_pos = self.state['hand'].astype(int)
