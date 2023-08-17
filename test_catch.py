@@ -1,6 +1,6 @@
 import argparse
 import pygame
-from tasks.catch import CatchEnv, NormalizedInputs
+from tasks.catch import CatchEnv, DelayedCatchEnv
 
 def load_model(checkpoint):
     from ray.rllib.algorithms import r2d2
@@ -8,8 +8,7 @@ def load_model(checkpoint):
 
     env_config = {}
     env_name = 'catch'
-    # register_env(env_name, lambda env_config: CatchEnv(**env_config))
-    register_env(env_name, lambda env_config: NormalizedInputs(CatchEnv(**env_config)))
+    register_env(env_name, lambda env_config: DelayedCatchEnv(**env_config))
     config = r2d2.R2D2Config()
     config = config.environment(env_name, env_config=env_config)
 
@@ -42,13 +41,12 @@ def load_model(checkpoint):
     return algo, config
 
 def simulate(args):
-    env = CatchEnv(render_mode='human', gravity=0, tau=0.015)
-    env = NormalizedInputs(env)
+    env = DelayedCatchEnv(render_mode='human', gravity=0, tau=0.015, delay=args.delay)
 
     if args.agent == 'model':
         algo, config = load_model(args.checkpoint)
 
-    for _ in range(args.nepisodes):
+    for j in range(args.nepisodes):
         obs, info = env.reset()
         if args.agent == 'model':
             state = algo.get_policy().get_initial_state()
@@ -77,6 +75,8 @@ def simulate(args):
     env.close()
 
 checkpoint = '/Users/mobeets/ray_results/R2D2_catch_2023-08-16_14-38-09vxvmv5b8/checkpoint_000162'
+checkpoint = '/Users/mobeets/ray_results/R2D2_catch_2023-08-16_16-47-10o2j9vm6v/checkpoint_000235' # delay=3
+checkpoint = '/Users/mobeets/ray_results/R2D2_catch_2023-08-16_18-44-49gnjtauh4/checkpoint_000238' # delay=5
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -86,5 +86,7 @@ if __name__ == '__main__':
                         default=checkpoint, help='checkpoint directory to load')
     parser.add_argument('-n', '--nepisodes', type=int,
                         default=10, help='number of episodes')
+    parser.add_argument('-d', '--delay', type=int,
+                        default=0, help='sensory delay (timesteps)')
     args = parser.parse_args()
     simulate(args)

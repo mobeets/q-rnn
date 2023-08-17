@@ -188,9 +188,9 @@ class DelayedCatchEnv(CatchEnv):
     """
     Just like the Catch environment, except each observation is delayed by a fixed number of timesteps.
     """
-    def __init__(self, **config):
-        super().__init__()
-        self.delay = config.get('delay', 0)
+    def __init__(self, delay=0, **config):
+        super().__init__(**config)
+        self.delay = delay
         self.initial_obs = np.zeros(self.observation_space.shape[0])
 
     def update(self, obs, info):

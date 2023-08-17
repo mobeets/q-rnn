@@ -37,7 +37,7 @@ plt.hist(ends, np.arange(0, env.screen_height,20), alpha=0.4)
 #%% initialize model
 
 use_custom_model = False
-env_config = {'gravity': 0, 'tau': 0.015, 'action_penalty': 0, 'delay': 2}
+env_config = {'gravity': 0, 'tau': 0.015, 'action_penalty': 0.0005, 'delay': 5}
 
 env_name = 'catch'
 register_env(env_name, lambda env_config: DelayedCatchEnv(**env_config))
@@ -48,7 +48,7 @@ config.lr = 0.0005
 config.gamma = 1
 config.exploration_config['initial_epsilon'] = 1.0
 config.exploration_config['final_epsilon'] = 0.0
-config.exploration_config['epsilon_timesteps'] = 100000 # divide by 1000 to get number of batches
+config.exploration_config['epsilon_timesteps'] = 50000 # divide by 1000 to get number of batches
 
 if use_custom_model:
     from ray.rllib.models import ModelCatalog
@@ -80,13 +80,13 @@ best_score = -np.inf
 checkpoints = []
 
 get_score = lambda x: x['evaluation']['episode_reward_mean'] if 'evaluation' in x else x['episode_reward_mean']
-for i in range(2):
+for i in range(250):
     output = algo.train()
     outputs.append(output)
 
     score = get_score(outputs[-1])
-    epsilons = algo.workers.foreach_worker(lambda worker: worker.get_policy().exploration.get_state()['cur_epsilon'])
-    print(i, score, epsilons)
+    epsilons = np.min(algo.workers.foreach_worker(lambda worker: worker.get_policy().exploration.get_state()['cur_epsilon']))
+    print('{}. Score={:0.3f}, Best={:0.3f}, ε={:0.3f}'.format(i, score, best_score, epsilons))
 
     if score > best_score:
         # note: this isn't always the best model...
@@ -106,7 +106,7 @@ plt.plot([get_score(x) for x in outputs])
 algo.restore(checkpoints[-2])
 
 explore = False
-nepisodes = 100
+nepisodes = 250
 
 env = DelayedCatchEnv(**env_config)
 
@@ -138,9 +138,14 @@ print(np.mean([trials[-1][-2] for trials in Trials]))
 for i, trials in enumerate(Trials):
     ball = np.vstack([trial[-1]['ball'][1] for trial in trials])
     hand = np.vstack([trial[-1]['hand'][1] for trial in trials])
-    if i == 33:
+    if i == 0:
         plt.plot(ball)
         plt.plot(hand)
         [plt.plot(x*np.ones(2), y + np.array([-1,1])*env.hand_length/2, 'k-', alpha=0.1, linewidth=1, zorder=-1) for x,y in enumerate(hand)]
         break
 plt.ylim([0, env.screen_height])
+
+# todos:
+# - use evaluation made of fixed trajectories?
+# - what are the signatures of prediction?
+# 
