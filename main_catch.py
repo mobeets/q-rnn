@@ -37,7 +37,7 @@ plt.hist(ends, np.arange(0, env.screen_height,20), alpha=0.4)
 #%% initialize model
 
 use_custom_model = False
-env_config = {'gravity': 0, 'tau': 0.015, 'action_penalty': 0.0005, 'delay': 0}
+env_config = {'gravity': 0, 'tau': 0.015, 'action_penalty': 0.0005, 'delay': 9}
 
 env_name = 'catch'
 register_env(env_name, lambda env_config: DelayedCatchEnv(**env_config))
@@ -79,6 +79,8 @@ outputs = []
 best_score = -np.inf
 checkpoints = []
 
+# algo.restore(checkpoint_delay7)
+
 get_score = lambda x: x['evaluation']['episode_reward_mean'] if 'evaluation' in x else x['episode_reward_mean']
 for i in range(250):
     output = algo.train()
@@ -104,14 +106,19 @@ plt.plot([get_score(x) for x in outputs])
 #%% rollout
 
 # algo.restore(checkpoints[-2])
-algo.restore(checkpoint_delay5)
+algo.restore(checkpoint_delay0)
+# algo.restore(checkpoint_delay5)
+# algo.restore(checkpoint_delay3)
+# algo.restore(checkpoint_delay7)
+# algo.restore(checkpoint_delay10v2)
+# algo.restore(checkpoint_delay9)
 
 explore = False
 nepisodes = 250
 randomPolicy = True
 
 env = DelayedCatchEnv(**env_config)
-env.delay = 5
+env.delay = 9
 
 Trials = []
 for j in range(nepisodes):
@@ -160,7 +167,7 @@ plt.ylim([0, env.screen_height])
 from analysis.correlations import linreg_fit, linreg_eval
 from sklearn.decomposition import PCA
 
-delays = list(np.arange(-5, 10))
+delays = list(np.arange(-5, 15))
 Pts = {delay: ([], [], []) for delay in delays}
 
 Z = np.vstack([trial[1][0] for trials in Trials[:int(len(Trials)/2)] for trial in trials])
@@ -218,8 +225,18 @@ plt.ylim([-0.03,1.03])
 # plt.plot(pts_delay0[:,0], pts_delay0[:,1], 'o', label='τ=0')
 # plt.plot(pts_delay5[:,0], pts_delay5[:,1], 'o', label='τ=5')
 # plt.plot(pts[:,0], pts[:,1], 'o', label='τ=5')
-plt.plot(pts_delay0_rand[:,0], pts_delay0_rand[:,1], 'o', label='τ=0')
-plt.plot(pts_delay5_rand[:,0], pts_delay5_rand[:,1], 'o', label='τ=5')
+# plt.plot(pts_delay0_rand[:,0], pts_delay0_rand[:,1], 'o', label='τ=0')
+# plt.plot(pts_delay5_rand[:,0], pts_delay5_rand[:,1], 'o', label='τ=5')
+# plt.plot(pts_delay3[:,0], pts_delay3[:,1], 'o', label='τ=3')
+# plt.plot(pts3_delay0[:,0], pts3_delay0[:,1], 'o', label='τ=0')
+# plt.plot(pts3_delay3[:,0], pts3_delay3[:,1], 'o', label='τ=3')
+# plt.plot(pts3_delay5[:,0], pts3_delay5[:,1], 'o', label='τ=5')
+# plt.plot(pts_rand[:,0], pts_rand[:,1], 'k-', label='random', zorder=-1)
+# plt.plot(pts10_delay10[:,0], pts10_delay10[:,1], 'o', label='τ=10')
+# plt.plot(pts10_delayrand[:,0], pts10_delayrand[:,1], 'k-', label='random', zorder=-1)
+plt.plot(pts9_delay0[:,0], pts9_delay0[:,1], 'o', label='τ=0')
+plt.plot(pts9_delay9[:,0], pts9_delay9[:,1], 'o', label='τ=9')
+plt.plot(pts9_delayrand[:,0], pts9_delayrand[:,1], 'k-', label='random', zorder=-1)
 plt.xlabel('delay (d)')
 plt.ylabel('$R^2$ using $Z_t$ to predict $O_{t+d}$')
 plt.ylim([-0.03,1.03])
