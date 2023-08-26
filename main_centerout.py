@@ -141,3 +141,25 @@ for trials in Trials:
     clr = clrs[trials[0][-1]['theta']]
     pos = np.vstack([trial[0][2:] for trial in trials])
     plt.plot(pos[:,0], pos[:,1], '.-', color=clr, alpha=0.25, markersize=2)
+
+#%% pca
+
+from sklearn.decomposition import PCA
+
+Z = np.vstack([trial[1][0] for trials in Trials for trial in trials])
+pca = PCA(n_components=Z.shape[1])
+pca.fit(Z)
+# plt.plot(pca.explained_variance_ratio_[:10], '.-'), plt.ylim([0,1])
+
+fig = plt.figure()
+ax = fig.add_subplot(projection='3d')
+
+for trials in Trials:
+    zs = np.vstack([trial[1][0] for trial in trials])
+    zs = pca.transform(zs)
+    clr = clrs[trials[0][-1]['theta']]
+    plt.plot(zs[:,0], zs[:,1], zs[:,2], '.-', color=clr, alpha=0.25, markersize=2)
+    plt.plot(zs[0,0], zs[0,1], zs[0,2], '+', color=clr, alpha=0.25, markersize=5)
+
+# ax.view_init(azim=-110, elev=7.)
+plt.tight_layout()

@@ -3,7 +3,7 @@
 import numpy as np
 from plotting.base import plt
 import gymnasium as gym
-from ray.rllib.algorithms import r2d2
+from ray.rllib.algorithms.r2d2 import R2D2Config
 from ray.tune.registry import register_env
 from tasks.catch import DelayedCatchEnv
 
@@ -34,15 +34,59 @@ ends = [X[X[:,0]==i][-1,2] for i in np.unique(X[:,0])]
 plt.hist(starts, np.arange(0, env.screen_height,20), alpha=0.4)
 plt.hist(ends, np.arange(0, env.screen_height,20), alpha=0.4)
 
+#%% fit prediction model (using different lags)
+
+from analysis.correlations import linreg_fit, linreg_eval
+
+nepisodes = 2000
+X = []
+for j in range(nepisodes):
+    obs, info = env.reset()
+    terminated = False
+    truncated = False
+    while not (terminated or truncated):
+        action = env.action_space.sample()
+        obs, reward, terminated, truncated, info = env.step(action)
+        if terminated or truncated:
+            obs = np.nan * obs
+        caction = np.zeros(env.action_space.n); caction[action] = 1.
+        X.append((obs, caction))
+X = np.vstack([np.hstack(x) for x in X])
+
+# fit prediction model (using different lags)
+lags = range(1,6)
+mdls = {}
+for lag in lags:
+    Xc = []
+    inds = []
+    for clag in range(1,lag+2):
+        t1 = clag-1
+        t2 = len(X)-(lag-clag)-1
+        Xcc = X[t1:t2].copy()
+        Xc.append(Xcc)
+        inds.append((t1,t2,len(X)))
+    Yc = Xc[-1][:,:-env.action_space.n] # predict next observation
+    Xc = np.hstack(Xc[:-1]) # using prev observations/actions at all previous lags
+    
+    ixc = np.any(np.isnan(Xc), axis=1) | np.any(np.isnan(Yc), axis=1)
+    Xc = Xc[~ixc]; Yc = Yc[~ixc]
+    ix = np.random.rand(len(Xc)) < 0.5 # train/test split
+    mdl = linreg_fit(Xc[ix], Yc[ix], scale=True, add_bias=True)
+    res = linreg_eval(Xc[~ix], Yc[~ix], mdl)
+    mdls[lag] = (mdl, res)
+
+print([(lag, res['rsq']) for lag, (mdl, res) in mdls.items()])
+
 #%% initialize model
 
+use_r2d2 = False
 use_custom_model = False
-env_config = {'gravity': 0, 'tau': 0.015, 'action_penalty': 0.0005, 'delay': 9}
+env_config = {'gravity': 0, 'tau': 0.015, 'action_penalty': 0.0005, 'delay': 10}
 
 env_name = 'catch'
 register_env(env_name, lambda env_config: DelayedCatchEnv(**env_config))
 
-config = r2d2.R2D2Config()
+config = R2D2Config()
 config = config.environment(env_name, env_config=env_config)
 config.lr = 0.0005
 config.gamma = 1
@@ -63,7 +107,7 @@ else:
     config.model['use_lstm'] = True
     config.model['lstm_cell_size'] = 64
     config.model['lstm_use_prev_action'] = True
-    config.model['max_seq_len'] = 20
+    config.model['max_seq_len'] = 50
     config.model['fcnet_hiddens'] = [64]
     config.model['fcnet_activation'] = 'linear'
 
