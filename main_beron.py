@@ -32,10 +32,14 @@ from plotting.behavior import plot_example_actions, plot_average_actions_around_
 from analysis.decoding_beron import get_rnn_decoding_weights, get_mouse_decoding_weights, load_mouse_data
 from plotting.behavior import plot_decoding_weights, mouseWordOrder
 
-epsilon = 0; tau = None
+epsilon = 0.04; tau = None
 ntrials = 10000
 
-fnms = glob.glob(os.path.join('data', 'models', '*granb*.json')) # 'grant': trial-level, 'granz': timestep; 'grans': H=2 timestep; 'granasoft': H=10 trial-level w/ softmax
+# 'grant': H=10 trial-level, 'granz': timestep; 'grans': H=2 timestep; 'granasoft': H=10 trial-level w/ softmax; 'granb': H=3 trial-level
+# note: grans/granz are not trained well, so they're basically useless
+# note: for trial-level models, we still have gamma=0.9. does that affect the model results?
+
+fnms = glob.glob(os.path.join('data', 'models', '*grant*.json'))
 AllTrials = []
 AllTrialsRand = []
 for fnm in fnms:
@@ -46,20 +50,21 @@ for fnm in fnms:
 plot_average_actions_around_switch([Trials['test'] for Trials in AllTrials])
 plot_switching_by_symbol([Trials['test'] for Trials in AllTrials], wordOrder=None)
 plot_switching_by_symbol([Trials['test'] for Trials in AllTrials], wordOrder=mouseWordOrder)
+
 feature_params = {
     'choice': 5, # choice history
     'reward': 5, # reward history
-    'choice*reward': 5, # rewarded trials, aligned to action (original)
-    '-choice*omission': 5, # unrewarded trials, aligned to action
+    'choice*reward': 12, # rewarded trials, aligned to action (original)
+    '-choice*omission': 12, # unrewarded trials, aligned to action
     'b': 0 # belief history
 }
 weights, std_errors, names, lls = get_rnn_decoding_weights(AllTrials, feature_params)
-plot_decoding_weights_grouped(weights, std_errors, feature_params)
+plot_decoding_weights_grouped(weights, std_errors, feature_params, title='Value RNN')
 
 if 'mouse_trials' not in vars():
     mouse_trials = load_mouse_data()
 weights, std_errors, names, lls = get_mouse_decoding_weights(mouse_trials, feature_params)
-plot_decoding_weights_grouped(weights, std_errors, feature_params)
+plot_decoding_weights_grouped(weights, std_errors, feature_params, title='Mouse')
 
 #%% plot belief R^2
 
@@ -93,7 +98,7 @@ plt.tight_layout()
 
 from tasks.beron2022 import BeronBeliefAgent
 
-ntrials = 10000
+ntrials = 5000
 env_params = {'p_rew_max': 0.8, 'p_switch': 0.02, 'ntrials': ntrials}
 env = Beron2022_TrialLevel(**env_params)
 env = PreviousRewardWrapper(env)
@@ -124,15 +129,176 @@ plot_switching_by_symbol([Trials['test'] for Trials in AllTrials], wordOrder=Non
 plot_switching_by_symbol([Trials['test'] for Trials in AllTrials], wordOrder=mouseWordOrder)
 plot_example_actions(Trials['test'])
 plot_average_actions_around_switch([Trials['test'] for Trials in AllTrials])
+
+#%%
+
+# feature_params = {
+#     'choice': 5, # choice history
+#     'reward': 5, # reward history
+#     'choice*reward': 5, # rewarded trials, aligned to action (original)
+#     '-choice*omission': 5, # unrewarded trials, aligned to action
+#     'b': 0 # belief history
+# }
 feature_params = {
-    'a': 5, # choice history
-    'r': 5, # reward history
-    'x': 5, # rewarded trials, aligned to action (original)
-    'y': 5, # unrewarded trials, aligned to action
-    'b': 0 # belief history
+    'choice': 0, # choice history
+    'reward': 0, # reward history
+    'A': 5, # rewarded trials, left choice
+    'a': 5, # unrewarded trials, left choice
+    'B': 5, # rewarded trials, right choice
+    'b': 5, # unrewarded trials, right choice
+    'bc': 0 # belief history
 }
 weights, std_errors, names, lls = get_rnn_decoding_weights(AllTrials, feature_params)
-plot_decoding_weights_grouped(weights, std_errors, feature_params)
+plot_decoding_weights_grouped(weights, std_errors, feature_params, title='Beliefs')
+
+#%% visualize beliefs
+
+from tasks.beron2022 import belief_step_beron2022
+b_prev = 0.9
+rows = []
+for r_prev in [0,1]:
+    for a_prev in [0,1]:
+        b_next = belief_step_beron2022(b_prev, r_prev, a_prev, env.p_rew_max, env.p_switch)
+        rows.append((r_prev, a_prev, b_next))
+rows = np.vstack(rows)
+print(rows)
+
+#%% visualize beliefs
+
+def get_name(a, r, collapse=False):
+    if (a == r) and (a == 1):
+        name = 'Stay' if collapse else 'A'
+    elif (a != r) and (a == 1):
+        name = 'Switch' if collapse else 'a'
+    elif (a == r) and (a == 0):
+        name = 'Stay' if collapse else 'b'
+    elif (a != r) and (a == 0):
+        name = 'Switch' if collapse else 'B'
+    else:
+        assert False
+    return name
+
+from tasks.beron2022 import belief_step_beron2022
+data = {key: [] for key in rows}
+
+b_prevs = np.linspace(0,1,11)
+for b_prev in b_prevs:
+    rows = {}
+    for r_t2 in [0,1]:
+        for a_t2 in [0,1]:
+            b_t2 = belief_step_beron2022(b_prev, r_t2, a_t2, env.p_rew_max, env.p_switch)
+            for r_t1 in [0,1]:
+                for a_t1 in [0,1]:
+                    b_t1 = belief_step_beron2022(b_t2, r_t1, a_t1, env.p_rew_max, env.p_switch)
+                    key = get_name(a_t2, r_t2) + '-' + get_name(a_t1, r_t1)
+                    if key not in rows:
+                        rows[key] = []
+                    val = (b_t2, b_t2-b_prev, b_t1, b_t1-b_t2, b_t1-b_prev)
+                    rows[key].append(val)
+
+    for key, vals in rows.items():
+        assert len(np.unique(vals, axis=0)) == 1
+        # print(key, np.round(vals[0], 3))
+        data[key].append(vals[0][-1])
+
+X,y  = [],[]
+for key in data:
+    parts = key.split('-')
+    vals = data[key]
+
+    xs = np.zeros(8)
+    if parts[1] == 'A':
+        xs[0] = 1
+    elif parts[1] == 'b':
+        xs[1] = 1
+    elif parts[1] == 'B':
+        xs[2] = 1
+    else:
+        xs[3] = 1
+    if parts[0] == 'A':
+        xs[4] = 1
+    elif parts[0] == 'b':
+        xs[5] = 1
+    elif parts[0] == 'B':
+        xs[6] = 1
+    else:
+        xs[7] = 1
+    
+    # xs = np.zeros(4)
+    # if parts[1] == 'Switch':
+    #     xs[0] = 1
+    # else:
+    #     xs[2] = 1
+    # if parts[0] == 'Switch':
+    #     xs[1] = 1
+    # else:
+    #     xs[3] = 1
+    
+    Xc = np.tile(xs[None,:], (len(vals), 1))
+    X.append(Xc)
+    y.append(vals)
+
+X = np.vstack(X)
+y = np.hstack(y)[:,None]
+
+from analysis.correlations import linreg_fit
+
+res = linreg_fit(X, y, scale=False, add_bias=True)
+ws = res['W'][:-1]
+ws = np.reshape(ws, (2,4)).T
+plt.plot(ws.T, '.-', alpha=0.5)
+
+# plt.plot(b_prevs, np.vstack([data[x] for x in data]).T)
+# plt.plot(np.vstack([data[x] for x in data]).mean(axis=1))
+
+#%% fit belief regression model
+
+def get_name(a, r, collapse=False):
+    if (a == r) and (a == 1):
+        name = 'Stay' if collapse else 'A'
+    elif (a != r) and (a == 1):
+        name = 'Switch' if collapse else 'a'
+    elif (a == r) and (a == 0):
+        name = 'Stay' if collapse else 'b'
+    elif (a != r) and (a == 0):
+        name = 'Switch' if collapse else 'B'
+    else:
+        assert False
+    return name
+
+env_params = {'p_rew_max': 0.8, 'p_switch': 0.02, 'ntrials': ntrials}
+env = Beron2022_TrialLevel(**env_params)
+env = PreviousRewardWrapper(env)
+env = PreviousActionWrapper(env, env.action_space.n)
+obs, info = env.reset()
+done = False
+
+b = 0.5
+X, y = [], []
+S = [info['state']]
+while not done:
+    a = np.random.choice(2)
+    obs, r, done, _, info = env.step(a)
+    b = belief_step_beron2022(b, r, a, env.p_rew_max, env.p_switch)
+
+    name = get_name(a, r)
+    x = np.array([name==nm for nm in ['A', 'a', 'b', 'B']]).astype(float)
+    assert x.sum() == 1
+    X.append(x)
+    y.append(b)
+    S.append(info['state'])
+
+X = np.vstack(X)
+y = np.hstack(y)[:,None] - 0.5
+S = np.hstack(S)
+
+from analysis.correlations import linreg_fit, linreg_eval
+
+mdl = linreg_fit(X, y, scale=False, add_bias=False)
+res = linreg_eval(X, y, mdl)
+ws = mdl['W']#[:-1]
+plt.plot(ws, '.-', alpha=0.5)
+print(res['rsq'])
 
 #%% load model
 

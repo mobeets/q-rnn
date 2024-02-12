@@ -43,8 +43,8 @@ class PreviousRewardWrapper(Wrapper):
     def __init__(self, env, initial_prev_reward=0):
         super().__init__(env)
         if type(env.observation_space) is spaces.Discrete:
-            self.observation_space = spaces.Box(low=[0,-np.inf],
-                                                high=[env.observation_space.n, np.inf],
+            self.observation_space = spaces.Box(low=np.array([0,-np.inf]),
+                                                high=np.array([env.observation_space.n, np.inf]),
                                                 shape=(1 + 1,))
         else:
             raise Exception("Need to implement observation_space for PreviousRewardWrapper")

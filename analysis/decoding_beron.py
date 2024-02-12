@@ -101,7 +101,7 @@ def fit_logreg_policy(sessions, memories, featfun, C=1.0, normalize=False):
 #%% RNN/MOUSE SPECIFIC
 
 pm1 = lambda x: 2 * x - 1
-feature_functions = [
+feature_functions_og = [
     lambda cs, rs: pm1(cs),                # choices
     lambda cs, rs: rs,                     # rewards
     lambda cs, rs: pm1(cs) * rs,           # +1 if choice=1 and reward, 0 if no reward, -1 if choice=0 and reward
@@ -109,6 +109,27 @@ feature_functions = [
     lambda cs, rs: pm1((cs == rs)),   
     lambda cs, rs: np.ones(len(cs))        # overall bias term
 ]
+
+feature_functions = [
+    lambda cs, rs: pm1(cs),                # choices
+    lambda cs, rs: rs,                     # rewards
+    lambda cs, rs: (pm1(cs) == pm1(rs)),             # +1 if choice==reward, 0 otherwise
+    lambda cs, rs: -1*(pm1(cs) != pm1(rs)),            # -1 if choice!=reward, 0 otherwise
+    lambda cs, rs: pm1((cs == rs)),   
+    lambda cs, rs: np.ones(len(cs))        # overall bias term
+]
+
+feature_functions = [
+    lambda cs, rs: pm1(cs),                # choices
+    lambda cs, rs: rs,                     # rewards
+    lambda cs, rs: (pm1(cs) == 1) * (pm1(rs) == 1), # A
+    lambda cs, rs: (pm1(cs) == 1) * (pm1(rs) == -1), # a
+    lambda cs, rs: (pm1(cs) == -1) * (pm1(rs) == 1), # B
+    lambda cs, rs: (pm1(cs) == -1) * (pm1(rs) == -1), # b
+    lambda cs, rs: pm1((cs == rs)),   
+    lambda cs, rs: np.ones(len(cs))        # overall bias term
+]
+print("WARNING: Using temporary feature_functions!")
 
 def get_decoding_weights(features, feature_params):
     memories = [y for x,y in feature_params.items()] + [1]

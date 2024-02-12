@@ -198,7 +198,7 @@ def plot_decoding_weights(weights, std_errors, names, ylim=None, doShow=True):
     if doShow:
         plt.show()
 
-def plot_decoding_weights_grouped(weights, std_errors, feature_params, doShow=True):
+def plot_decoding_weights_grouped(weights, std_errors, feature_params, doShow=True, title=None):
     plt.figure(figsize=(3,2.5))
     colors = ['#1f77b4', '#2ca02c', '#d62728', '#ff7f0e', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
     i = 0
@@ -218,6 +218,8 @@ def plot_decoding_weights_grouped(weights, std_errors, feature_params, doShow=Tr
     plt.xlabel('lag')
     plt.ylabel('weight')
     plt.legend(fontsize=8)
+    if title:
+        plt.title(title)
     if doShow:
         plt.show()
     

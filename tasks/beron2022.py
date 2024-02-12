@@ -8,6 +8,7 @@ from tasks.trial import get_itis
 class Beron2022(gym.Env):
     def __init__(self, p_rew_max=0.8, p_switch=0.02, ntrials=100,
                  iti_min=0, iti_p=0.25, iti_max=0, iti_dist='geometric',
+                 const_isi_signal=True, reward_delay=0, max_trial_length=10,
                  include_null_action=False, abort_penalty=0):
         self.observation_space = spaces.Discrete(2) # 0 during ITI, 1 during ISI
         self.action_space = spaces.Discrete(2 + include_null_action) # left port, right port, null [optional]
@@ -16,6 +17,9 @@ class Beron2022(gym.Env):
         self.p_switch = p_switch # prob. of state change each trial
         self.state = None # if left (0) or right (1) port has higher reward prob
         self.abort_penalty = abort_penalty # penalty for acting during ITI (if include_null_action==True)
+        self.const_isi_signal = const_isi_signal # if True, input is 1 throughout ISI; if False, input occurs only at transition
+        self.reward_delay = reward_delay # delay between choice and reward
+        self.max_trial_length = max_trial_length # max trial length (excluding ITI)
         if not self.include_null_action and self.abort_penalty != 0:
             raise Exception("Cannot provide a nonzero abort penalty if there is no null action")
 
@@ -47,28 +51,40 @@ class Beron2022(gym.Env):
         """
         if self.t < self.iti:
             return 0
-        return 1
+        return 1 if self.const_isi_signal else int(self.t == self.iti)
 
     def _sample_reward(self, state, action):
         """
         reward probability is determined by whether agent chose the high port
         """
         if action == 2: # no decision yet
-            return 0 
+            assert self.r is None
+            return 0
         elif self.t < self.iti: # early decision (abort penalty)
-            return self.abort_penalty
-        else: # decision reported on time
+            assert self.r is None
+            self.r = self.abort_penalty
+            self.decision_time = self.t
+            return self.r # we don't wait to give abort penalty
+        elif self.r is None: # decision reported on time
             if state == action:
                 p_reward = self.p_rew_max
             elif action < 2:
                 p_reward = 1-self.p_rew_max
-            return int(self.rng_reward.random() < p_reward)
+            self.decision_time = self.t
+            self.r = int(self.rng_reward.random() < p_reward)
+        
+        if self.t - self.decision_time >= self.reward_delay:
+            return self.r
+        else:
+            return 0
         
     def _get_info(self):
         return {'state': self.state, 'iti': self.iti, 't': self.t, 'trial_index': self.trial_index}
     
     def _new_trial(self):
         self.trial_index += 1
+        self.r = None
+        self.decision_time = None
         self.t = -1 # -1 to ensure we get at least one ITI observation between trials
         self.iti = get_itis(self, ntrials=1)[0]
         self._update_state()
@@ -94,9 +110,9 @@ class Beron2022(gym.Env):
         """
         agent chooses a port
         """
-        trial_done = (self.t >= self.iti)
-        done = trial_done and (self.trial_index+1 >= self.ntrials)
         reward = self._sample_reward(self.state, action)
+        trial_done = (self.r == reward) or (self.t - self.iti > self.max_trial_length)
+        done = trial_done and (self.trial_index+1 >= self.ntrials)
         if not done:
             if trial_done:
                 self._new_trial()
