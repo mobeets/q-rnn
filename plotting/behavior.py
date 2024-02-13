@@ -214,10 +214,10 @@ def plot_decoding_weights_grouped(weights, std_errors, feature_params, doShow=Tr
         i += v
     plt.xlim([0.9, max(feature_params.values())+0.1])
     plt.plot(plt.xlim(), np.zeros(2), 'k-', linewidth=1, alpha=0.5, zorder=-1)
-    plt.yticks(ticks=[0, 1])
+    # plt.yticks(ticks=[0, 1])
     plt.xlabel('lag')
     plt.ylabel('weight')
-    plt.legend(fontsize=8)
+    plt.legend(fontsize=8, loc='lower right')
     if title:
         plt.title(title)
     if doShow:

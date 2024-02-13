@@ -6,8 +6,8 @@ from numpy.random import default_rng
 from tasks.trial import get_itis
 
 class Beron2022(gym.Env):
-    def __init__(self, p_rew_max=0.8, p_switch=0.02, ntrials=100,
-                 iti_min=0, iti_p=0.25, iti_max=0, iti_dist='geometric',
+    def __init__(self, p_rew_max=0.8, p_switch=0.02, ntrials=200,
+                 iti_min=0, iti_p=0.5, iti_max=0, iti_dist='geometric',
                  const_isi_signal=True, reward_delay=0, max_trial_length=10,
                  include_null_action=False, abort_penalty=0):
         self.observation_space = spaces.Discrete(2) # 0 during ITI, 1 during ISI
@@ -22,6 +22,8 @@ class Beron2022(gym.Env):
         self.max_trial_length = max_trial_length # max trial length (excluding ITI)
         if not self.include_null_action and self.abort_penalty != 0:
             raise Exception("Cannot provide a nonzero abort penalty if there is no null action")
+        if self.abort_penalty > 0:
+            raise Exception("Abort penatly must be negative")
 
         self.iti_min = iti_min
         self.iti_max = iti_max # n.b. only used if iti_dist == 'uniform'
@@ -59,21 +61,25 @@ class Beron2022(gym.Env):
         """
         if action == 2: # no decision yet
             assert self.r is None
+            assert self.decision_time is None
             return 0
-        elif self.t < self.iti: # early decision (abort penalty)
+        elif self.t < self.iti: # early decision
             assert self.r is None
-            self.r = self.abort_penalty
-            self.decision_time = self.t
-            return self.r # we don't wait to give abort penalty
-        elif self.r is None: # decision reported on time
+            if self.abort_penalty != 0:
+                self.r = self.abort_penalty
+                self.decision_time = self.t
+                return self.r
+            else:
+                return 0
+        elif self.decision_time is None and action < 2: # choice decision reported on time
             if state == action:
                 p_reward = self.p_rew_max
-            elif action < 2:
+            else:
                 p_reward = 1-self.p_rew_max
             self.decision_time = self.t
             self.r = int(self.rng_reward.random() < p_reward)
         
-        if self.t - self.decision_time >= self.reward_delay:
+        if self.decision_time is not None and self.t - self.decision_time >= self.reward_delay:
             return self.r
         else:
             return 0
@@ -111,7 +117,7 @@ class Beron2022(gym.Env):
         agent chooses a port
         """
         reward = self._sample_reward(self.state, action)
-        trial_done = (self.r == reward) or (self.t - self.iti > self.max_trial_length)
+        trial_done = (self.decision_time is not None) or (self.t - self.iti > self.max_trial_length)
         done = trial_done and (self.trial_index+1 >= self.ntrials)
         if not done:
             if trial_done:

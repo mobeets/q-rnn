@@ -23,6 +23,20 @@ plt.rcParams['font.family'] = 'Helvetica'
 mpl.rcParams['axes.spines.right'] = False
 mpl.rcParams['axes.spines.top'] = False
 
+#%% plot model scores, before/after training
+
+kwd = 'lowgamma'
+# kwd = '_ts_'
+fnms = glob.glob(os.path.join('data', 'models', '*{}*.json'.format(kwd)))
+
+print('Found {} models.'.format(len(fnms)))
+for i, fnm in enumerate(fnms):
+    res = json.load(open(fnm))
+    scs = res['scores']
+    plt.plot(i, scs[0], 'k.')
+    plt.plot(i, scs[-1], 'r.')
+    plt.plot(i, max(scs), 'r*')
+
 #%% eval many models
 
 import glob
@@ -35,11 +49,13 @@ from plotting.behavior import plot_decoding_weights, mouseWordOrder
 epsilon = 0.04; tau = None
 ntrials = 10000
 
-# 'grant': H=10 trial-level, 'granz': timestep; 'grans': H=2 timestep; 'granasoft': H=10 trial-level w/ softmax; 'granb': H=3 trial-level
+# 'grant': H=10 trial-level, 'granz': timestep; 'grans': H=2 timestep; 'granasoft': H=10 trial-level w/ softmax; 'granb': H=3 trial-level; 'lowgamma': H=10 trial-level, γ=0.2
 # note: grans/granz are not trained well, so they're basically useless
-# note: for trial-level models, we still have gamma=0.9. does that affect the model results?
+# note: for trial-level models, default was γ=0.9. does that affect the model results?
 
-fnms = glob.glob(os.path.join('data', 'models', '*grant*.json'))
+fnms = glob.glob(os.path.join('data', 'models', '*lowgamma*.json'))
+print('Found {} models.'.format(len(fnms)))
+
 AllTrials = []
 AllTrialsRand = []
 for fnm in fnms:
@@ -51,6 +67,8 @@ plot_average_actions_around_switch([Trials['test'] for Trials in AllTrials])
 plot_switching_by_symbol([Trials['test'] for Trials in AllTrials], wordOrder=None)
 plot_switching_by_symbol([Trials['test'] for Trials in AllTrials], wordOrder=mouseWordOrder)
 
+#%%
+
 feature_params = {
     'choice': 5, # choice history
     'reward': 5, # reward history
@@ -58,6 +76,16 @@ feature_params = {
     '-choice*omission': 12, # unrewarded trials, aligned to action
     'b': 0 # belief history
 }
+feature_params = {
+    'choice': 2, # choice history
+    'reward': 2, # reward history
+    'A': 5, # rewarded trials, left choice
+    'a': 5, # unrewarded trials, left choice
+    'B': 5, # rewarded trials, right choice
+    'b': 5, # unrewarded trials, right choice
+    'bc': 0 # belief history
+}
+
 weights, std_errors, names, lls = get_rnn_decoding_weights(AllTrials, feature_params)
 plot_decoding_weights_grouped(weights, std_errors, feature_params, title='Value RNN')
 
@@ -130,8 +158,6 @@ plot_switching_by_symbol([Trials['test'] for Trials in AllTrials], wordOrder=mou
 plot_example_actions(Trials['test'])
 plot_average_actions_around_switch([Trials['test'] for Trials in AllTrials])
 
-#%%
-
 # feature_params = {
 #     'choice': 5, # choice history
 #     'reward': 5, # reward history
@@ -140,8 +166,8 @@ plot_average_actions_around_switch([Trials['test'] for Trials in AllTrials])
 #     'b': 0 # belief history
 # }
 feature_params = {
-    'choice': 0, # choice history
-    'reward': 0, # reward history
+    'choice': 1, # choice history
+    'reward': 1, # reward history
     'A': 5, # rewarded trials, left choice
     'a': 5, # unrewarded trials, left choice
     'B': 5, # rewarded trials, right choice
@@ -292,13 +318,36 @@ X = np.vstack(X)
 y = np.hstack(y)[:,None] - 0.5
 S = np.hstack(S)
 
+plt.plot(S), plt.xlim([0,200])
+
 from analysis.correlations import linreg_fit, linreg_eval
 
 mdl = linreg_fit(X, y, scale=False, add_bias=False)
 res = linreg_eval(X, y, mdl)
 ws = mdl['W']#[:-1]
-plt.plot(ws, '.-', alpha=0.5)
+# plt.plot(ws, '.-', alpha=0.5)
 print(res['rsq'])
+
+#%%
+
+env_params = {'p_rew_max': 0.8, 'p_switch': 0.02, 'ntrials': 200}
+env = Beron2022(**env_params)
+env = PreviousRewardWrapper(env)
+env = PreviousActionWrapper(env, env.action_space.n)
+obs, info = env.reset()
+done = False
+
+S = [list(info.values())]
+X = [obs]
+while not done:
+    a = np.random.choice(2)
+    obs, r, done, _, info = env.step(a)
+    S.append(list(info.values()))
+    X.append(obs)
+
+S = np.vstack(S)
+X = np.vstack(X)
+plt.plot(X)#, plt.xlim([0,200])
 
 #%% load model
 
