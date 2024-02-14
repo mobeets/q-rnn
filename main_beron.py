@@ -26,16 +26,16 @@ mpl.rcParams['axes.spines.top'] = False
 #%% plot model scores, before/after training
 
 kwd = 'lowgamma'
-# kwd = '_ts_'
+kwd = '_ts2_'
 fnms = glob.glob(os.path.join('data', 'models', '*{}*.json'.format(kwd)))
 
 print('Found {} models.'.format(len(fnms)))
 for i, fnm in enumerate(fnms):
     res = json.load(open(fnm))
     scs = res['scores']
-    plt.plot(i, scs[0], 'k.')
-    plt.plot(i, scs[-1], 'r.')
-    plt.plot(i, max(scs), 'r*')
+    plt.plot(i, scs[0], 'ko', alpha=0.3)
+    plt.plot(i, scs[-1], 'r.', alpha=0.3)
+    plt.plot(i, max(scs), 'r*', alpha=0.3)
 
 #%% eval many models
 
@@ -52,8 +52,8 @@ ntrials = 10000
 # 'grant': H=10 trial-level, 'granz': timestep; 'grans': H=2 timestep; 'granasoft': H=10 trial-level w/ softmax; 'granb': H=3 trial-level; 'lowgamma': H=10 trial-level, γ=0.2
 # note: grans/granz are not trained well, so they're basically useless
 # note: for trial-level models, default was γ=0.9. does that affect the model results?
-
-fnms = glob.glob(os.path.join('data', 'models', '*lowgamma*.json'))
+kwd = '_ts2_'
+fnms = glob.glob(os.path.join('data', 'models', '*{}*.json'.format(kwd)))
 print('Found {} models.'.format(len(fnms)))
 
 AllTrials = []
@@ -70,19 +70,16 @@ plot_switching_by_symbol([Trials['test'] for Trials in AllTrials], wordOrder=mou
 #%%
 
 feature_params = {
-    'choice': 5, # choice history
-    'reward': 5, # reward history
-    'choice*reward': 12, # rewarded trials, aligned to action (original)
-    '-choice*omission': 12, # unrewarded trials, aligned to action
-    'b': 0 # belief history
-}
-feature_params = {
-    'choice': 2, # choice history
-    'reward': 2, # reward history
-    'A': 5, # rewarded trials, left choice
-    'a': 5, # unrewarded trials, left choice
-    'B': 5, # rewarded trials, right choice
-    'b': 5, # unrewarded trials, right choice
+    'choice': 1, # choice history
+    'reward': 1, # reward history
+    'choice*reward': 5, # rewarded trials, aligned to action (original)
+    '-choice*omission': 5, # unrewarded trials, aligned to action
+    'A': 0, # rewarded trials, left choice
+    'a': 0, # unrewarded trials, left choice
+    'B': 0, # rewarded trials, right choice
+    'b': 0, # unrewarded trials, right choice
+    'Ab': 0,
+    'Ba': 0,
     'bc': 0 # belief history
 }
 
@@ -136,7 +133,7 @@ agent = BeronBeliefAgent(env)
 epsilon = 0.04
 
 nreps = 10
-AllTrials = []
+BeliefTrials = []
 seeds = [456, 787]
 seeds = [None, None]
 for i in range(nreps):
@@ -149,32 +146,31 @@ for i in range(nreps):
             agent.reset(seed=seed+1)
         trials = probe_model(agent, env, behavior_policy=None, epsilon=epsilon, tau=None, nepisodes=1)
         Trials[name] = trials
-    AllTrials.append(Trials)
+    BeliefTrials.append(Trials)
 
 # analyze belief agent
 from plotting.behavior import mouseWordOrder
-plot_switching_by_symbol([Trials['test'] for Trials in AllTrials], wordOrder=None)
-plot_switching_by_symbol([Trials['test'] for Trials in AllTrials], wordOrder=mouseWordOrder)
+plot_switching_by_symbol([Trials['test'] for Trials in BeliefTrials], wordOrder=None)
+plot_switching_by_symbol([Trials['test'] for Trials in BeliefTrials], wordOrder=mouseWordOrder)
 plot_example_actions(Trials['test'])
-plot_average_actions_around_switch([Trials['test'] for Trials in AllTrials])
+plot_average_actions_around_switch([Trials['test'] for Trials in BeliefTrials])
 
-# feature_params = {
-#     'choice': 5, # choice history
-#     'reward': 5, # reward history
-#     'choice*reward': 5, # rewarded trials, aligned to action (original)
-#     '-choice*omission': 5, # unrewarded trials, aligned to action
-#     'b': 0 # belief history
-# }
+#%%
+
 feature_params = {
     'choice': 1, # choice history
     'reward': 1, # reward history
-    'A': 5, # rewarded trials, left choice
-    'a': 5, # unrewarded trials, left choice
-    'B': 5, # rewarded trials, right choice
-    'b': 5, # unrewarded trials, right choice
+    'choice*reward': 5, # rewarded trials, aligned to action (original)
+    '-choice*omission': 5, # unrewarded trials, aligned to action
+    'A': 0, # rewarded trials, left choice
+    'a': 0, # unrewarded trials, left choice
+    'B': 0, # rewarded trials, right choice
+    'b': 0, # unrewarded trials, right choice
+    'Ab': 0,
+    'Ba': 0,
     'bc': 0 # belief history
 }
-weights, std_errors, names, lls = get_rnn_decoding_weights(AllTrials, feature_params)
+weights, std_errors, names, lls = get_rnn_decoding_weights(BeliefTrials, feature_params)
 plot_decoding_weights_grouped(weights, std_errors, feature_params, title='Beliefs')
 
 #%% visualize beliefs
@@ -330,7 +326,7 @@ print(res['rsq'])
 
 #%%
 
-env_params = {'p_rew_max': 0.8, 'p_switch': 0.02, 'ntrials': 200}
+env_params = {'p_rew_max': 0.8, 'p_switch': 0.02, 'ntrials': 200, 'iti_min': 2, 'iti_max': 7, 'iti_dist': 'uniform', 'reward_delay': 1}
 env = Beron2022(**env_params)
 env = PreviousRewardWrapper(env)
 env = PreviousActionWrapper(env, env.action_space.n)
@@ -347,7 +343,29 @@ while not done:
 
 S = np.vstack(S)
 X = np.vstack(X)
-plt.plot(X)#, plt.xlim([0,200])
+plt.plot(X), plt.xlim([0,200])
+
+X.sum(axis=0)
+
+#%%
+
+ts = np.arange(20)
+itis = np.arange(4)
+vals = []
+for iti in itis:
+    val = 0.9**(iti + 15-ts)
+    val[val > 1] = 0
+    vals.append(val)
+    # plt.plot(val)
+
+vals = np.vstack(vals).T
+for i,iti in enumerate(itis):
+    vals[(iti+1):,i] = np.nan
+# plt.plot(vals, '.-')
+    
+V = np.nanmean(vals, axis=1)
+plt.plot(V, '.-')
+plt.plot(0 - 0.9*V, '.-')
 
 #%% load model
 

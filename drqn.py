@@ -81,7 +81,9 @@ def train_model(args):
         env = Beron2022_TrialLevel(**env_params)
     elif args.experiment == 'beron2022_time':
         env_params = {'p_rew_max': args.p_reward_max, 'p_switch': args.p_switch, 
-                      'iti_min': args.iti_min, 'iti_p': args.iti_p, 
+                      'iti_min': args.iti_min, 'iti_max': args.iti_max,
+                      'iti_p': args.iti_p, 'iti_dist': args.iti_dist, 
+                      'reward_delay': args.reward_delay,
                       'abort_penalty': args.abort_penalty,
                       'include_null_action': args.abort_penalty < 0,
                       'ntrials': args.ntrials_per_episode}
@@ -236,10 +238,16 @@ if __name__ == '__main__':
                         default=0.02, help='switch probability of best arm (beron2022 env only)')
     parser.add_argument('--abort_penalty', type=float,
                         default=0.0, help='penalty for reporting decision during ITI')
+    parser.add_argument('--reward_delay', type=float,
+                        default=0, help='time steps between choice and reward')
     parser.add_argument('--iti_p', type=float,
                         default=0.5, help='iti_p')
     parser.add_argument('--iti_min', type=int,
                         default=0, help='iti_min')
+    parser.add_argument('--iti_max', type=int,
+                        default=0, help='iti_max')
+    parser.add_argument('--iti_dist', type=str,
+                        default='geometric', choices=['geometric', 'uniform'], help='iti_dist')
     parser.add_argument('-k', '--hidden_size', type=int,
                         default=10, help='number of hidden units in the rnn')
     parser.add_argument('-b', '--batch_size', type=int,

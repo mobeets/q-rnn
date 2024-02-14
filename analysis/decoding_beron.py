@@ -54,11 +54,13 @@ def pull_sample_dataset(session_id_list, data):
     
     return sample_features, sample_target, sample_block_pos_core
 
-def encode_session(choices, rewards, memories, featfun, normalize=False):
-    assert len(memories) == len(featfun)
+def encode_session(choices, rewards, featparams, featfun, normalize=False):
     # Construct the features
     features = []
-    for fn, memory in zip(featfun, memories): 
+    for key, memory in featparams.items():
+        if key not in featfun:
+            raise Exception("Unrecognized feature function name: {}".format(key))
+        fn = featfun[key]
         for lag in range(1, memory+1):
             # encode the data and pad with zeros
             x = fn(choices[:-lag], rewards[:-lag])
@@ -70,12 +72,12 @@ def encode_session(choices, rewards, memories, featfun, normalize=False):
     return features, choices
 
 def compute_logreg_probs(sessions, lr_args, featfun, normalize=False):
-    lr, memories = lr_args
+    lr, featparams = lr_args
     model_probs = []
     lls = []
     Xs = []
     for choices, rewards in sessions:
-        X, y = encode_session(choices, rewards, memories, featfun=featfun, normalize=normalize)
+        X, y = encode_session(choices, rewards, featparams, featfun=featfun, normalize=normalize)
         policy = lr.predict_proba(X)#[:, 1]
         ll = -log_loss(y, policy)
         model_probs.append(policy)
@@ -88,8 +90,8 @@ def compute_logreg_probs(sessions, lr_args, featfun, normalize=False):
     std_errors = np.sqrt(np.diag(cov_mat))
     return model_probs, lls, std_errors
 
-def fit_logreg_policy(sessions, memories, featfun, C=1.0, normalize=False):
-    encoded_sessions = [encode_session(*session, memories, featfun=featfun, normalize=normalize) for session in sessions]
+def fit_logreg_policy(sessions, featparams, featfun, C=1.0, normalize=False):
+    encoded_sessions = [encode_session(*session, featparams, featfun=featfun, normalize=normalize) for session in sessions]
     X = np.row_stack([session[0] for session in encoded_sessions])
     y = np.concatenate([session[1] for session in encoded_sessions])
     
@@ -101,45 +103,34 @@ def fit_logreg_policy(sessions, memories, featfun, C=1.0, normalize=False):
 #%% RNN/MOUSE SPECIFIC
 
 pm1 = lambda x: 2 * x - 1
-feature_functions_og = [
-    lambda cs, rs: pm1(cs),                # choices
-    lambda cs, rs: rs,                     # rewards
-    lambda cs, rs: pm1(cs) * rs,           # +1 if choice=1 and reward, 0 if no reward, -1 if choice=0 and reward
-    lambda cs, rs: -pm1(cs) * (1-rs),      # -1 if choice=1 and no reward, 1 if reward, +1 if choice=0 and no reward
-    lambda cs, rs: pm1((cs == rs)),   
-    lambda cs, rs: np.ones(len(cs))        # overall bias term
-]
 
-feature_functions = [
-    lambda cs, rs: pm1(cs),                # choices
-    lambda cs, rs: rs,                     # rewards
-    lambda cs, rs: (pm1(cs) == pm1(rs)),             # +1 if choice==reward, 0 otherwise
-    lambda cs, rs: -1*(pm1(cs) != pm1(rs)),            # -1 if choice!=reward, 0 otherwise
-    lambda cs, rs: pm1((cs == rs)),   
-    lambda cs, rs: np.ones(len(cs))        # overall bias term
-]
-
-feature_functions = [
-    lambda cs, rs: pm1(cs),                # choices
-    lambda cs, rs: rs,                     # rewards
-    lambda cs, rs: (pm1(cs) == 1) * (pm1(rs) == 1), # A
-    lambda cs, rs: (pm1(cs) == 1) * (pm1(rs) == -1), # a
-    lambda cs, rs: (pm1(cs) == -1) * (pm1(rs) == 1), # B
-    lambda cs, rs: (pm1(cs) == -1) * (pm1(rs) == -1), # b
-    lambda cs, rs: pm1((cs == rs)),   
-    lambda cs, rs: np.ones(len(cs))        # overall bias term
-]
-print("WARNING: Using temporary feature_functions!")
+feature_functions = {
+    'choice': lambda cs, rs: pm1(cs),              # choices
+    'reward': lambda cs, rs: rs,                   # rewards
+    'choice*reward': lambda cs, rs: pm1(cs) * rs,          # +1 if A, -1 if B; 0 if R==0
+    '-choice*omission': lambda cs, rs: -pm1(cs) * (1-rs),  # +1 if b, -1 if a; 0 if R==1
+    'A': lambda cs, rs: (pm1(cs) == 1) * (pm1(rs) == 1),   # A
+    'a': lambda cs, rs: (pm1(cs) == 1) * (pm1(rs) == -1),  # a
+    'B': lambda cs, rs: (pm1(cs) == -1) * (pm1(rs) == 1),  # B
+    'b': lambda cs, rs: (pm1(cs) == -1) * (pm1(rs) == -1), # b
+    'Ab': lambda cs, rs: pm1(cs == rs) * (pm1(cs == rs) > 0), # +1 if A or b; else 0
+    'Ba': lambda cs, rs: pm1(cs == rs) * (pm1(cs == rs) < 0), # +1 if B or a; else 0
+    'bc': lambda cs, rs: pm1(cs == rs),          # beliefs
+    'bias': lambda cs, rs: np.ones(len(cs))        # overall bias term
+}
 
 def get_decoding_weights(features, feature_params):
-    memories = [y for x,y in feature_params.items()] + [1]
+    if 'bias' not in feature_params:
+        feature_params['bias'] = 1
+    assert feature_params['bias'] == 1
     names = ['{}(t-{})'.format(name, t+1) for name, ts in feature_params.items() for t in range(ts)]
 
-    lr = fit_logreg_policy(features['train'], memories, feature_functions) # refit model with reduced histories, training set
-    model_probs, lls, std_errors = compute_logreg_probs(features['test'], [lr, memories], feature_functions)
+    lr = fit_logreg_policy(features['train'], feature_params, feature_functions) # refit model with reduced histories, training set
+    model_probs, lls, std_errors = compute_logreg_probs(features['test'], [lr, feature_params], feature_functions)
     print('ll: {:0.3f}'.format(np.mean(lls)))
 
-    weights = lr.coef_[0,:-1]
+    # weights = lr.coef_[0,:-1] # ignore bias term
+    weights = lr.coef_[0,:]
     return weights, std_errors, names, lls
 
 def load_mouse_data(filename='data/mouse/mouse_data.csv'):

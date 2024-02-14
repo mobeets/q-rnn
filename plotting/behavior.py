@@ -200,7 +200,7 @@ def plot_decoding_weights(weights, std_errors, names, ylim=None, doShow=True):
 
 def plot_decoding_weights_grouped(weights, std_errors, feature_params, doShow=True, title=None):
     plt.figure(figsize=(3,2.5))
-    colors = ['#1f77b4', '#2ca02c', '#d62728', '#ff7f0e', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+    colors = ['#1f77b4', '#2ca02c', '#d62728', '#ff7f0e', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#9467bd', '#e377c2', '#bcbd22', '#17becf']
     i = 0
     for c, (name, v) in enumerate(feature_params.items()):
         if v == 0:
@@ -215,9 +215,10 @@ def plot_decoding_weights_grouped(weights, std_errors, feature_params, doShow=Tr
     plt.xlim([0.9, max(feature_params.values())+0.1])
     plt.plot(plt.xlim(), np.zeros(2), 'k-', linewidth=1, alpha=0.5, zorder=-1)
     # plt.yticks(ticks=[0, 1])
+    plt.xticks(ticks=np.arange(0, max(feature_params.values())+1, 2)[1:])
     plt.xlabel('lag')
     plt.ylabel('weight')
-    plt.legend(fontsize=8, loc='lower right')
+    plt.legend(fontsize=8, loc='upper right')
     if title:
         plt.title(title)
     if doShow:
