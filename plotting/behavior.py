@@ -30,6 +30,11 @@ def plot_example_actions(trials, doShow=True):
     if doShow:
         plt.show()
 
+def get_action(trial):
+    # get action on each trial (accounting for a possible reward delay)
+    # return trial.A[-1]
+    return trial.A[np.where(trial.X[:,0] == 1)[0][0]] if trial.X[:,0].sum() == 1 else trial.A[-1]
+
 def plot_average_actions_around_switch(AllTrials, tBefore=10, tAfter=20, doShow=True):
     """
     plot Fig. 1C-D from Beron et al. (2022)
@@ -41,12 +46,15 @@ def plot_average_actions_around_switch(AllTrials, tBefore=10, tAfter=20, doShow=
         values = []
         for trials in AllTrials:
             S = np.hstack([trial.S[-1] for trial in trials])
+            A = np.hstack([get_action(trial) for trial in trials])
             switchInds = np.hstack([0, np.where(np.diff(S) != 0)[0] + 1, len(S)+1])
             
             if showHighPort:
-                A = np.hstack([trial.S[-1] == trial.A[-1] for trial in trials])
+                # Y = np.hstack([trial.S[-1] == trial.A[-1] for trial in trials])
+                Y = (S == A)
             else:
-                A = np.hstack([False, np.hstack([trials[t+1].A[-1] != trials[t].A[-1] for t in range(len(trials)-1)])])
+                # Y = np.hstack([False, np.hstack([trials[t+1].A[-1] != trials[t].A[-1] for t in range(len(trials)-1)])])
+                Y = np.hstack([False, A[1:] != A[:-1]])
 
             As = []
             for i in range(len(switchInds)-1):
@@ -56,8 +64,8 @@ def plot_average_actions_around_switch(AllTrials, tBefore=10, tAfter=20, doShow=
                 x0 = switchInds[i]
                 xPost = np.min([switchInds[i+1], switchInds[i]+tAfter])
 
-                a_pre = A[xPre:x0]
-                a_post = A[x0:xPost]
+                a_pre = Y[xPre:x0]
+                a_post = Y[x0:xPost]
                 if len(a_pre) < tBefore:
                     n = tBefore - len(a_pre)
                     a_pre = np.hstack([np.nan*np.ones(n), a_pre])
@@ -105,7 +113,8 @@ def toSymbol(a,r):
     elif a == 1 and r == 1:
         return 'R'
     else:
-        assert False
+        # either an abort trial or a no-response trial
+        return '_'
 
 def toWord(seq):
     if seq[0].lower() == 'l':
@@ -130,17 +139,19 @@ def plot_switching_by_symbol(AllTrials, doShow=True, wordOrder=None, modelBased=
 
     # counts per model
     for trials in AllTrials:
-        symbs = [toSymbol(trial.A[-1], trial.R[-1]) for trial in trials]
+        symbs = [toSymbol(get_action(trial), trial.R[-1]) for trial in trials]
         switches = []
         for i in range(len(trials)-wordLength-1):
             ctrials = trials[i:(i+wordLength+1)]
             if len(set([trial.episode_index for trial in ctrials])) > 1:
                 continue
             csymbs = symbs[i:(i+wordLength+1)]
+            if '_' in csymbs: # ignore any sequence with an abort/no-response trial
+                continue
             curWord = toWord(''.join(csymbs))
             if modelBased:
                 curQ = ctrials[-1].Q[-1]
-                lastAction = ctrials[-2].A[-1]
+                lastAction = get_action(ctrials[-2])
                 if tau is None:
                     modelAction = np.argmax(curQ)
                     switchProb = modelAction != lastAction

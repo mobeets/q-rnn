@@ -23,6 +23,7 @@ def eval_model(model_file, ntrials, epsilon=None, tau=None, verbose=False):
     if args['experiment'] == 'beron2022_time':
         env_params.update({'iti_min': args.get('iti_min', 0), 'iti_p': args.get('iti_p', 0.5), 
             'abort_penalty': args.get('abort_penalty', 0),
+            'reward_delay': args.get('reward_delay', 0),
             'include_null_action': args.get('abort_penalty', 0) < 0})
         env = Beron2022(**env_params)
     else:

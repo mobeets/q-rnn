@@ -58,41 +58,43 @@ class Beron2022(gym.Env):
     def _sample_reward(self, state, action, verbose=False):
         """
         reward probability is determined by whether agent chose the high port
+        returns current reward, and whether or not trial should end (based on action)
         """
         if verbose:
             print('t=', self.t, self.trial_index)
-        if self.decision_time is None and action == 2: # no decision yet
-            assert self.r is None
-            assert self.decision_time is None
-            if verbose:
-                print('no decision yet')
-            return 0
-        elif action != 2 and self.t < self.iti: # early decision
-            assert self.r is None
-            if verbose:
-                print('early decision')
-            if self.abort_penalty != 0:
-                self.r = self.abort_penalty
+        # todo: no reward delay if trial was aborted
+        if self.decision_time is None:
+            if action == 2: # no decision yet
+                assert self.r is None
+                if verbose:
+                    print('no decision yet')
+                return 0, False
+            elif action != 2 and self.t < self.iti: # early decision
+                assert self.r is None
+                if verbose:
+                    print('early decision')
+                if self.abort_penalty != 0:
+                    self.r = self.abort_penalty
+                    self.decision_time = self.t
+                    return self.r, True
+                else:
+                    return 0, False
+            elif action < 2: # choice decision reported on time
+                if verbose:
+                    print('choice made', action)
+                if state == action:
+                    p_reward = self.p_rew_max
+                else:
+                    p_reward = 1-self.p_rew_max
                 self.decision_time = self.t
-                return self.r
-            else:
-                return 0
-        elif self.decision_time is None and action < 2: # choice decision reported on time
-            if verbose:
-                print('choice made', action)
-            if state == action:
-                p_reward = self.p_rew_max
-            else:
-                p_reward = 1-self.p_rew_max
-            self.decision_time = self.t
-            self.r = int(self.rng_reward.random() < p_reward)
+                self.r = int(self.rng_reward.random() < p_reward)
         
         if self.decision_time is not None and self.t - self.decision_time >= self.reward_delay:
             if verbose:
                 print('reward delivery', self.r)
-            return self.r
+            return self.r, True
         else:
-            return 0
+            return 0, False
         
     def _get_info(self):
         return {'state': self.state, 'iti': self.iti, 't': self.t, 'trial_index': self.trial_index}
@@ -126,8 +128,8 @@ class Beron2022(gym.Env):
         """
         agent chooses a port
         """
-        reward = self._sample_reward(self.state, action)
-        trial_done = (self.decision_time is not None and self.t - self.decision_time >= self.reward_delay) or (self.t - self.iti > self.max_trial_length)
+        reward, was_delivered = self._sample_reward(self.state, action)
+        trial_done = was_delivered or (self.t - self.iti > self.max_trial_length)
         done = trial_done and (self.trial_index+1 >= self.ntrials)
         if not done:
             if trial_done:

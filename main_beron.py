@@ -26,16 +26,20 @@ mpl.rcParams['axes.spines.top'] = False
 #%% plot model scores, before/after training
 
 kwd = 'lowgamma'
-kwd = '_ts2_'
+kwd = '_ts3'
 fnms = glob.glob(os.path.join('data', 'models', '*{}*.json'.format(kwd)))
 
 print('Found {} models.'.format(len(fnms)))
+keepers = []
 for i, fnm in enumerate(fnms):
     res = json.load(open(fnm))
     scs = res['scores']
+    if scs[-1] > scs[0]+0.1:
+        keepers.append(fnm)
     plt.plot(i, scs[0], 'ko', alpha=0.3)
     plt.plot(i, scs[-1], 'r.', alpha=0.3)
     plt.plot(i, max(scs), 'r*', alpha=0.3)
+print('...and {} keepers.'.format(len(keepers)))
 
 #%% eval many models
 
@@ -52,8 +56,9 @@ ntrials = 10000
 # 'grant': H=10 trial-level, 'granz': timestep; 'grans': H=2 timestep; 'granasoft': H=10 trial-level w/ softmax; 'granb': H=3 trial-level; 'lowgamma': H=10 trial-level, γ=0.2
 # note: grans/granz are not trained well, so they're basically useless
 # note: for trial-level models, default was γ=0.9. does that affect the model results?
-kwd = '_ts2_'
+kwd = '_ts3'
 fnms = glob.glob(os.path.join('data', 'models', '*{}*.json'.format(kwd)))
+# fnms = keepers
 print('Found {} models.'.format(len(fnms)))
 
 AllTrials = []
@@ -90,6 +95,54 @@ if 'mouse_trials' not in vars():
     mouse_trials = load_mouse_data()
 weights, std_errors, names, lls = get_mouse_decoding_weights(mouse_trials, feature_params)
 plot_decoding_weights_grouped(weights, std_errors, feature_params, title='Mouse')
+
+#%% visualize RPEs
+
+from plotting.behavior import get_action
+
+gamma = 0.9
+trials = AllTrials[0]['test']
+V = np.hstack([[q[a] for a,q in zip(trial.A, trial.Q)] for trial in trials])
+Qmax = np.hstack([[q.max() for a,q in zip(trial.A, trial.Q)] for trial in trials])
+R = np.hstack([trial.R for trial in trials])
+RPE = R[:-1] + gamma*Qmax[1:] - V[:-1]
+i = 0
+for trial in trials:
+    trial.RPE = RPE[i:(i+len(trial))]
+    trial.V = V[i:(i+len(trial))]
+    i += len(trial)
+
+keyToPlot = 'RPE'
+keyToPlot = 'V'
+
+iti_min = np.min([trial.iti for trial in trials])
+ys = {}
+conds = []
+for i,trial in enumerate(trials[:-1]): # ignore last trial because RPE is shorter
+    if trial.R.sum() < 0:
+        cond = 'aborted'
+    elif trial.R.sum() == 1:
+        cond = 'rewarded'
+    elif get_action(trial) == 2:
+        cond = 'timeout'
+    else:
+        cond = 'unrewarded'
+    conds.append(cond)
+    if cond == 'aborted':
+        continue
+    y = trial.__dict__[keyToPlot][(trial.iti-iti_min):]
+    if cond == 'unrewarded' and len(y) == 2:
+        print(i)
+    if cond not in ys:
+        ys[cond] = []
+    ys[cond].append(y)
+
+for cond in ys:
+    ys[cond] = np.vstack(ys[cond])
+
+for cond, vs in ys.items():
+    plt.plot(vs.mean(axis=0), label=cond)
+plt.legend(fontsize=6)
 
 #%% plot belief R^2
 
@@ -326,7 +379,8 @@ print(res['rsq'])
 
 #%%
 
-env_params = {'p_rew_max': 0.8, 'p_switch': 0.02, 'ntrials': 200, 'iti_min': 2, 'iti_max': 7, 'iti_dist': 'uniform', 'reward_delay': 1}
+env_params = {'p_rew_max': 0.8, 'p_switch': 0.02, 'ntrials': 200, 'reward_delay': 1}
+# env_params = {'p_rew_max': 0.8, 'p_switch': 0.02, 'ntrials': 200, 'iti_min': 1, 'iti_max': 6, 'iti_dist': 'uniform', 'reward_delay': 1}
 env = Beron2022(**env_params)
 env = PreviousRewardWrapper(env)
 env = PreviousActionWrapper(env, env.action_space.n)
@@ -343,9 +397,9 @@ while not done:
 
 S = np.vstack(S)
 X = np.vstack(X)
-plt.plot(X), plt.xlim([0,200])
+# plt.plot(X), plt.xlim([0,200])
 
-X.sum(axis=0)
+print(len(X))
 
 #%%
 
