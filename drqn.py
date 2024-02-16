@@ -69,6 +69,32 @@ def balance_model_to_explore_actions(model, env, args):
     Q = np.vstack([x.Q for x in trials])
     model.output.bias = torch.nn.Parameter(torch.Tensor(-Q.mean(axis=0)))
 
+class KLMarginal:
+    def __init__(self, kl_penalty, margpol_alpha, nactions):
+        self.kl_penalty = kl_penalty
+        self.margpol_alpha = margpol_alpha
+        self.nactions = nactions
+
+    def reset(self):
+        self.action_counts = np.zeros(self.nactions,)
+
+    def step(self, q, a):
+        if self.kl_penalty == 0:
+            return 0
+
+        # calculate marginal policy
+        if self.action_counts.sum() == 0:
+            margpol = np.ones(self.nactions,)/self.nactions
+        else:
+            margpol = self.action_counts/self.action_counts.sum()
+        r_penalty = np.log(pol[a]) - np.log(margpol[a])
+
+        # update marginal policy (with exponential smoothing)
+        a_onehot = np.zeros(self.nactions,); a_onehot[a] = 1.
+        self.action_counts = (1-self.margpol_alpha)*self.action_counts + self.margpol_alpha*a_onehot
+
+        return self.kl_penalty*r_penalty
+
 def train_model(args):
     # set gym environment
     if args.experiment == 'roitman2002':
@@ -128,6 +154,11 @@ def train_model(args):
     else:
         epsilon = eps_start
         tau = None
+
+    # prepare kl penalty
+    klobj = KLMarginal(args.kl_penalty, args.margpol_alpha, env.action_space.n)
+
+    # init memory
     episode_memory = EpisodeMemory(random_update=random_update, 
                                     max_epi_num=max_epi_num,
                                     max_epi_len=max_epi_len, 
@@ -146,6 +177,7 @@ def train_model(args):
         episode_record = EpisodeBuffer()
 
         done = False
+        klobj.reset()
         while not done:
             # get action
             cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
@@ -153,6 +185,10 @@ def train_model(args):
 
             # take action 
             obs_next, r, done, truncated, info = env.step(a)
+
+            # kl penalty
+            r_penalty = klobj.step(q, a)
+            r -= r_penalty
                 
             # make data
             episode_record.put([obs, a, r/100.0, obs_next, 0.0 if done else 1.0])
@@ -179,7 +215,7 @@ def train_model(args):
             epsilon = max(eps_end, epsilon * eps_decay) # linear annealing on epsilon
 
         # evaluate model using greedy policy
-        test_trials = probe_model(Q, env, 1, epsilon=0)
+        test_trials = probe_model(Q, env, 1, epsilon=0, klobj=klobj)
         cur_score = np.hstack([x.R for x in test_trials]).mean()
         scores.append(cur_score)
 
@@ -266,6 +302,10 @@ if __name__ == '__main__':
                         default=0, help='lambda for TD(λ)')
     parser.add_argument('--l2_penalty', type=float,
                         default=0, help='penalty on L2 norm of RNN activations')
+    parser.add_argument('--kl_penalty', type=float,
+                        default=0, help='KL penalty between policy and marginal policy')
+    parser.add_argument('--margpol_alpha', type=float,
+                        default=0, help='alpha for exp smoothing on marginal policy')
     parser.add_argument('--use_softmax_policy', action='store_true',
                         default=False, help='if False, uses epsilon-greedy policy')
     parser.add_argument('--include_prev_reward', action='store_true',

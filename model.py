@@ -36,7 +36,7 @@ class DRQN(nn.Module):
         output = self.forward(xin, hidden)
         if epsilon is not None: # epsilon-greedy policy
             if self.rng.random() < epsilon: # choose random action
-                return int(self.rng.random() < 0.5), output
+                return self.rng.choice(self.output_size), output
             else: # choose best action
                 return output[0].argmax().item(), output
         elif tau is not None: # softmax policy

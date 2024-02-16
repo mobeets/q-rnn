@@ -27,6 +27,8 @@ mpl.rcParams['axes.spines.top'] = False
 
 kwd = 'lowgamma'
 kwd = '_ts3'
+kwd = 'tspen_1969'
+kwd = '_ts5'
 fnms = glob.glob(os.path.join('data', 'models', '*{}*.json'.format(kwd)))
 
 print('Found {} models.'.format(len(fnms)))
@@ -54,9 +56,11 @@ epsilon = 0.04; tau = None
 ntrials = 10000
 
 # 'grant': H=10 trial-level, 'granz': timestep; 'grans': H=2 timestep; 'granasoft': H=10 trial-level w/ softmax; 'granb': H=3 trial-level; 'lowgamma': H=10 trial-level, γ=0.2
+# 'tspen_1969': min_iti:2, max_iti:7, reward_delay:1, abort_penalty:0
+# 'tspen2': min_iti:1, max_iti:2, reward_delay:0, abort_penalty:-0.1
 # note: grans/granz are not trained well, so they're basically useless
 # note: for trial-level models, default was γ=0.9. does that affect the model results?
-kwd = '_ts3'
+kwd = '_ts5'
 fnms = glob.glob(os.path.join('data', 'models', '*{}*.json'.format(kwd)))
 # fnms = keepers
 print('Found {} models.'.format(len(fnms)))
@@ -77,8 +81,8 @@ plot_switching_by_symbol([Trials['test'] for Trials in AllTrials], wordOrder=mou
 feature_params = {
     'choice': 1, # choice history
     'reward': 1, # reward history
-    'choice*reward': 5, # rewarded trials, aligned to action (original)
-    '-choice*omission': 5, # unrewarded trials, aligned to action
+    'choice*reward': 10, # rewarded trials, aligned to action (original)
+    '-choice*omission': 10, # unrewarded trials, aligned to action
     'A': 0, # rewarded trials, left choice
     'a': 0, # unrewarded trials, left choice
     'B': 0, # rewarded trials, right choice

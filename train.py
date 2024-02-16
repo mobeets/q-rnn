@@ -70,7 +70,7 @@ def train(q_net=None, target_q_net=None, episode_memory=None,
     
     return loss/batch_size
 
-def probe_model(model, env, nepisodes, behavior_policy=None, epsilon=0, tau=tol):
+def probe_model(model, env, nepisodes, behavior_policy=None, epsilon=0, tau=tol, klobj=None):
     
     trials = []
     with torch.no_grad():
@@ -81,6 +81,8 @@ def probe_model(model, env, nepisodes, behavior_policy=None, epsilon=0, tau=tol)
 
             obs, info = env.reset()
             done = False
+            if klobj is not None:
+                klobj.reset()
             
             if hasattr(env, 'iti'):
                 trial = Trial(env.state, env.iti, index_in_episode=env.trial_index, episode_index=i)
@@ -103,7 +105,10 @@ def probe_model(model, env, nepisodes, behavior_policy=None, epsilon=0, tau=tol)
                 # take action
                 obs_next, r, done, truncated, info_next = env.step(a)
                 new_trial = info_next['t'] == -1
-                # print(cobs, h, q, a, r, info['t'])
+                
+                # kl penalty
+                r_penalty = klobj.step(q, a)
+                r -= r_penalty
 
                 # save
                 hc = h.numpy() if hasattr(h, 'numpy') else np.array(h)
