@@ -26,11 +26,12 @@ mpl.rcParams['axes.spines.top'] = False
 #%% plot model scores, before/after training
 
 kwd = 'lowgamma'
-kwd = '_ts3'
-kwd = 'tspen_1969'
+# kwd = '_ts3'
+# kwd = 'tspen_1969'
 # kwd = '_ts3'
 # kwd = 'softmaxtest'
 # kwd = 'kltest6'
+kwd = 'tspen4v2'
 fnms = glob.glob(os.path.join('data', 'models', '*{}*.json'.format(kwd)))
 
 print('Found {} models.'.format(len(fnms)))
@@ -54,9 +55,9 @@ from plotting.behavior import plot_example_actions, plot_average_actions_around_
 from analysis.decoding_beron import get_rnn_decoding_weights, get_mouse_decoding_weights, load_mouse_data
 from plotting.behavior import plot_decoding_weights, mouseWordOrder
 
-epsilon = 0.04; tau = None
+epsilon = 0.001; tau = None
 # epsilon = None; tau = 0.1
-ntrials = 10000
+# ntrials = 10000
 ntrials = 2000
 
 # 'grant': H=10 trial-level, 'granz': timestep; 'grans': H=2 timestep; 'granasoft': H=10 trial-level w/ softmax; 'granb': H=3 trial-level; 'lowgamma': H=10 trial-level, γ=0.2
@@ -64,7 +65,7 @@ ntrials = 2000
 # 'tspen2': min_iti:1, max_iti:2, reward_delay:0, abort_penalty:-0.1
 # note: grans/granz are not trained well, so they're basically useless
 # note: for trial-level models, default was γ=0.9. does that affect the model results?
-kwd = '_ts3'
+kwd = 'tspen4v3'
 fnms = glob.glob(os.path.join('data', 'models', '*{}*.json'.format(kwd)))
 # fnms = keepers
 print('Found {} models.'.format(len(fnms)))
@@ -115,15 +116,14 @@ Qmax = np.hstack([[q.max() for a,q in zip(trial.A, trial.Q)] for trial in trials
 R = np.hstack([trial.R for trial in trials])
 RPE = R[:-1] + gamma*Qmax[1:] - V[:-1]
 i = 0
+tPost = 3
 for trial in trials:
-    trial.RPE = RPE[i:(i+len(trial))]
-    trial.V = V[i:(i+len(trial))]
+    trial.V = V[i:(i+len(trial)+tPost)]
+    trial.RPE = RPE[i:(i+len(trial)+tPost)]
     i += len(trial)
 
-keyToPlot = 'RPE'
-keyToPlot = 'V'
-
-iti_min = np.min([trial.iti for trial in trials])
+t_pre = np.max([trial.iti for trial in trials])
+n = np.max([len(trial) for trial in trials])+tPost # total trial length
 ys = {}
 conds = []
 for i,trial in enumerate(trials[:-1]): # ignore last trial because RPE is shorter
@@ -138,19 +138,37 @@ for i,trial in enumerate(trials[:-1]): # ignore last trial because RPE is shorte
     conds.append(cond)
     if cond == 'aborted':
         continue
-    y = trial.__dict__[keyToPlot][(trial.iti-iti_min):]
-    if cond == 'unrewarded' and len(y) == 2:
+    t_start = max([0, trial.iti-t_pre])
+    yv = trial.V[t_start:]
+    yr = trial.RPE[t_start:]
+    if len(yv) < n:
+        yv = np.hstack([[np.nan]*(n-len(yv)), yv])
+        yr = np.hstack([[np.nan]*(n-len(yr)), yr])
+
+    if cond == 'unrewarded' and len(yr) == 2:
         print(i)
     if cond not in ys:
         ys[cond] = []
-    ys[cond].append(y)
+    ys[cond].append((yv, yr))
 
 for cond in ys:
-    ys[cond] = np.vstack(ys[cond])
+    ys[cond] = np.dstack(ys[cond])
 
-for cond, vs in ys.items():
-    plt.plot(vs.mean(axis=0), label=cond)
-plt.legend(fontsize=6)
+plt.figure(figsize=(3,6))
+for i in range(2):
+    plt.subplot(2,1,i+1)
+    for cond, vs in ys.items():
+        vsc = vs[i,:,:]
+        if len(vsc) == 0:
+            continue
+        mu = np.nanmean(vsc, axis=1)
+        xs = np.arange(len(mu)) - t_pre - 1
+        plt.plot(xs, mu, '.-', label=cond)
+    plt.title('Value' if i==0 else 'RPE')
+    plt.xlabel('time rel. to go cue')
+    plt.ylabel('Value' if i==0 else 'RPE')
+    plt.legend(fontsize=10)
+plt.tight_layout()
 
 #%% plot belief R^2
 

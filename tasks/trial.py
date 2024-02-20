@@ -9,7 +9,7 @@ def get_itis(self, ntrials=None):
     elif self.iti_dist == 'uniform':
         itis = self.rng_iti.choice(range(self.iti_max-self.iti_min+1), size=ntrials)
     else:
-        raise Exception("Unrecognized ITI distribution")
+        raise Exception("Unrecognized ITI distribution: {}".format(self.iti_dist))
     return self.iti_min + itis
 
 class Trial:

@@ -21,10 +21,12 @@ def eval_model(model_file, ntrials, epsilon=None, tau=None, verbose=False):
         print('H={}, prew={}, pswitch={}'.format(hidden_size, env_params['p_rew_max'], env_params['p_switch']))
 
     if args['experiment'] == 'beron2022_time':
-        env_params.update({'iti_min': args.get('iti_min', 0), 'iti_p': args.get('iti_p', 0.5), 
-            'abort_penalty': args.get('abort_penalty', 0),
-            'reward_delay': args.get('reward_delay', 0),
-            'include_null_action': args.get('abort_penalty', 0) < 0})
+        env_params.update({'iti_min': args.get('iti_min', 0), 'iti_p': args.get('iti_p', 0.5),
+                        'iti_dist': args.get('iti_dist', 'geometric'), 'iti_max': args.get('iti_max', 0), 
+                        'abort_penalty': args.get('abort_penalty', 0),
+                        'reward_delay': args.get('reward_delay', 0),
+                        'include_null_action': args.get('abort_penalty', 0) < 0})
+        print(env_params)
         env = Beron2022(**env_params)
     else:
         env = Beron2022_TrialLevel(**env_params)
