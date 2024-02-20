@@ -14,7 +14,7 @@ device = torch.device('cpu')
 from model import DRQN
 from train import train, probe_model
 from replay import EpisodeMemory, EpisodeBuffer
-from tasks.wrappers import PreviousActionWrapper, PreviousRewardWrapper
+from tasks.wrappers import PreviousActionWrapper, PreviousRewardWrapper, KLMarginal
 from tasks.roitman2002 import Roitman2002
 from tasks.beron2022 import Beron2022, Beron2022_TrialLevel, BeronCensorWrapper, BeronWrapper
 
@@ -31,6 +31,9 @@ eps_decay = 0.995 # time constant of decay for epsilon used in policy
 tau_start = 2.0 # initial tau used in softmax policy
 tau_end = 0.001 # final tau used in softmax policy
 tau_decay = 0.995 # time constant of decay for tau used in softmax policy
+
+tau_start = 0.5
+tau_end = 0.25
 
 # memory params
 random_update = True # If you want to do random update instead of sequential update
@@ -69,32 +72,6 @@ def balance_model_to_explore_actions(model, env, args):
     Q = np.vstack([x.Q for x in trials])
     model.output.bias = torch.nn.Parameter(torch.Tensor(-Q.mean(axis=0)))
 
-class KLMarginal:
-    def __init__(self, kl_penalty, margpol_alpha, nactions):
-        self.kl_penalty = kl_penalty
-        self.margpol_alpha = margpol_alpha
-        self.nactions = nactions
-
-    def reset(self):
-        self.action_counts = np.zeros(self.nactions,)
-
-    def step(self, q, a):
-        if self.kl_penalty == 0:
-            return 0
-
-        # calculate marginal policy
-        if self.action_counts.sum() == 0:
-            margpol = np.ones(self.nactions,)/self.nactions
-        else:
-            margpol = self.action_counts/self.action_counts.sum()
-        r_penalty = np.log(pol[a]) - np.log(margpol[a])
-
-        # update marginal policy (with exponential smoothing)
-        a_onehot = np.zeros(self.nactions,); a_onehot[a] = 1.
-        self.action_counts = (1-self.margpol_alpha)*self.action_counts + self.margpol_alpha*a_onehot
-
-        return self.kl_penalty*r_penalty
-
 def train_model(args):
     # set gym environment
     if args.experiment == 'roitman2002':
@@ -119,6 +96,13 @@ def train_model(args):
     if args.include_beron_wrapper and '_time' in args.experiment:
         input_size += 1
 
+    # prepare kl penalty
+    if args.kl_penalty != 0:
+        if not args.use_softmax_policy:
+            raise Exception("You must use a softmax policy to add in a KL penalty")
+        kl = KLMarginal(args.kl_penalty, args.margpol_alpha, env.action_space.n, args.include_prev_reward)
+    else:
+        kl = None
     if args.include_prev_reward:
         env = PreviousRewardWrapper(env)
     if args.include_prev_action:
@@ -155,9 +139,6 @@ def train_model(args):
         epsilon = eps_start
         tau = None
 
-    # prepare kl penalty
-    klobj = KLMarginal(args.kl_penalty, args.margpol_alpha, env.action_space.n)
-
     # init memory
     episode_memory = EpisodeMemory(random_update=random_update, 
                                     max_epi_num=max_epi_num,
@@ -175,23 +156,27 @@ def train_model(args):
 
         obs, info = env.reset()
         episode_record = EpisodeBuffer()
+        if args.kl_penalty > 0:
+            kl.reset()
 
         done = False
-        klobj.reset()
         while not done:
             # get action
             cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
             a, (q,h) = Q.sample_action(cobs, h.to(device), epsilon=epsilon, tau=tau)
 
-            # take action 
+            # take action
             obs_next, r, done, truncated, info = env.step(a)
-
-            # kl penalty
-            r_penalty = klobj.step(q, a)
-            r -= r_penalty
+            if args.kl_penalty > 0:
+                r_penalty = kl.step(a, q, tau)
+                r -= r_penalty
+                if kl.include_prev_reward:
+                    # assert np.isclose(r+r_penalty, obs_next[1])
+                    obs_next[1] = r
                 
             # make data
-            episode_record.put([obs, a, r/100.0, obs_next, 0.0 if done else 1.0])
+            # episode_record.put([obs, a, r/100.0, obs_next, 0.0 if done else 1.0])
+            episode_record.put([obs, a, r, obs_next, 0.0 if done else 1.0])
             obs = obs_next
 
             if len(episode_memory) >= min_epi_num:
@@ -215,7 +200,7 @@ def train_model(args):
             epsilon = max(eps_end, epsilon * eps_decay) # linear annealing on epsilon
 
         # evaluate model using greedy policy
-        test_trials = probe_model(Q, env, 1, epsilon=0, klobj=klobj)
+        test_trials = probe_model(Q, env, 1, epsilon=0, kl=kl)
         cur_score = np.hstack([x.R for x in test_trials]).mean()
         scores.append(cur_score)
 

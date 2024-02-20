@@ -28,7 +28,9 @@ mpl.rcParams['axes.spines.top'] = False
 kwd = 'lowgamma'
 kwd = '_ts3'
 kwd = 'tspen_1969'
-kwd = '_ts5'
+# kwd = '_ts3'
+# kwd = 'softmaxtest'
+# kwd = 'kltest6'
 fnms = glob.glob(os.path.join('data', 'models', '*{}*.json'.format(kwd)))
 
 print('Found {} models.'.format(len(fnms)))
@@ -36,7 +38,7 @@ keepers = []
 for i, fnm in enumerate(fnms):
     res = json.load(open(fnm))
     scs = res['scores']
-    if scs[-1] > scs[0]+0.1:
+    if scs[-1] > scs[0]+0.01:
         keepers.append(fnm)
     plt.plot(i, scs[0], 'ko', alpha=0.3)
     plt.plot(i, scs[-1], 'r.', alpha=0.3)
@@ -53,14 +55,16 @@ from analysis.decoding_beron import get_rnn_decoding_weights, get_mouse_decoding
 from plotting.behavior import plot_decoding_weights, mouseWordOrder
 
 epsilon = 0.04; tau = None
+# epsilon = None; tau = 0.1
 ntrials = 10000
+ntrials = 2000
 
 # 'grant': H=10 trial-level, 'granz': timestep; 'grans': H=2 timestep; 'granasoft': H=10 trial-level w/ softmax; 'granb': H=3 trial-level; 'lowgamma': H=10 trial-level, γ=0.2
 # 'tspen_1969': min_iti:2, max_iti:7, reward_delay:1, abort_penalty:0
 # 'tspen2': min_iti:1, max_iti:2, reward_delay:0, abort_penalty:-0.1
 # note: grans/granz are not trained well, so they're basically useless
 # note: for trial-level models, default was γ=0.9. does that affect the model results?
-kwd = '_ts5'
+kwd = '_ts3'
 fnms = glob.glob(os.path.join('data', 'models', '*{}*.json'.format(kwd)))
 # fnms = keepers
 print('Found {} models.'.format(len(fnms)))
@@ -72,9 +76,9 @@ for fnm in fnms:
     AllTrials.append(Trials)
     AllTrialsRand.append(Trials_rand)
 
-plot_average_actions_around_switch([Trials['test'] for Trials in AllTrials])
 plot_switching_by_symbol([Trials['test'] for Trials in AllTrials], wordOrder=None)
 plot_switching_by_symbol([Trials['test'] for Trials in AllTrials], wordOrder=mouseWordOrder)
+plot_average_actions_around_switch([Trials['test'] for Trials in AllTrials])
 
 #%%
 
@@ -100,7 +104,7 @@ if 'mouse_trials' not in vars():
 weights, std_errors, names, lls = get_mouse_decoding_weights(mouse_trials, feature_params)
 plot_decoding_weights_grouped(weights, std_errors, feature_params, title='Mouse')
 
-#%% visualize RPEs
+#%% visualize RPEs (timestep-level only)
 
 from plotting.behavior import get_action
 

@@ -4,7 +4,7 @@ import torch
 from train import probe_model
 from model import DRQN
 from tasks.beron2022 import Beron2022, Beron2022_TrialLevel, BeronCensorWrapper, BeronWrapper
-from tasks.wrappers import PreviousRewardWrapper, PreviousActionWrapper
+from tasks.wrappers import PreviousRewardWrapper, PreviousActionWrapper, KLMarginal
 from analyze import add_beliefs_beron2022
 device = torch.device('cpu')
 
@@ -48,6 +48,11 @@ def eval_model(model_file, ntrials, epsilon=None, tau=None, verbose=False):
                     recurrent_cell=args.get('recurrent_cell', 'gru')).to(device)
     model.load_weights_from_path(modelfile)
 
+    if args.get('kl_penalty', 0) > 0:
+        kl = KLMarginal(args['kl_penalty'], args['margpol_alpha'], env.action_space.n, args['include_prev_reward'])
+    else:
+        kl = None
+
     # behavior_policy = DRQN(input_size=input_size, # empty + prev reward + prev actions
     #                 hidden_size=hidden_size,
     #                 output_size=env.action_space.n,
@@ -75,7 +80,7 @@ def eval_model(model_file, ntrials, epsilon=None, tau=None, verbose=False):
 
             # run model on trials
             trials = probe_model(model, env, behavior_policy=behavior_policy,
-                                    epsilon=epsilon, tau=tau, nepisodes=1)
+                                    epsilon=epsilon, tau=tau, nepisodes=1, kl=kl)
             if verbose:
                 print(useRandomModel, name, np.round(np.hstack([trial.R for trial in trials]).mean(),3))
 

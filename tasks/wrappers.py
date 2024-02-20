@@ -1,5 +1,6 @@
 import numpy as np
 from gymnasium import Wrapper, spaces
+import torch.nn.functional as F
 
 class PreviousActionWrapper(Wrapper):
     """
@@ -35,6 +36,38 @@ class PreviousActionWrapper(Wrapper):
         self.last_action = action
         new_obs = self.observation(obs)
         return new_obs, reward, terminated, truncated, info
+
+class KLMarginal:
+    def __init__(self, kl_penalty, margpol_alpha, nactions, include_prev_reward, min_penalty=-2, max_penalty=2):
+        if kl_penalty < 0:
+            raise Exception("KL penalty should be positive")
+        if margpol_alpha <= 0 or margpol_alpha > 1:
+            raise Exception("margpol alpha should be between 0 and 1 (as in exponential smoothing)")
+        self.kl_penalty = kl_penalty
+        self.alpha = margpol_alpha
+        self.nactions = nactions
+        self.include_prev_reward = include_prev_reward
+        self.min_penalty = min_penalty
+        self.max_penalty = max_penalty
+
+    def reset(self):
+        self.marginal_pol = np.ones(self.nactions,)/self.nactions
+
+    def step(self, action, q, tau):
+        # calculate penalty
+        pol = F.softmax(q.detach()/tau, dim=-1).numpy().flatten()
+        r_penalty = np.log(pol[action]) - np.log(self.marginal_pol[action])
+
+        # constrain penalty within bounds
+        if self.min_penalty is not None and r_penalty < self.min_penalty:
+            r_penalty = self.min_penalty
+        elif self.max_penalty is not None and r_penalty > self.max_penalty:
+            r_penalty = self.max_penalty
+
+        # update marginal policy (using exponential smoothing)
+        self.marginal_pol = (1-self.alpha)*self.marginal_pol + self.alpha*pol
+
+        return self.kl_penalty*r_penalty
 
 class PreviousRewardWrapper(Wrapper):
     """
