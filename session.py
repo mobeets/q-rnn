@@ -25,6 +25,7 @@ def eval_model(model_file, ntrials, epsilon=None, tau=None, verbose=False):
                         'iti_dist': args.get('iti_dist', 'geometric'), 'iti_max': args.get('iti_max', 0), 
                         'abort_penalty': args.get('abort_penalty', 0),
                         'reward_delay': args.get('reward_delay', 0),
+                        'jitter': 0,#args.get('jitter', 0),
                         'include_null_action': args.get('abort_penalty', 0) < 0})
         print(env_params)
         env = Beron2022(**env_params)

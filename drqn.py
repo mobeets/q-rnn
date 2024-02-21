@@ -88,6 +88,7 @@ def train_model(args):
                       'iti_p': args.iti_p, 'iti_dist': args.iti_dist, 
                       'reward_delay': args.reward_delay,
                       'abort_penalty': args.abort_penalty,
+                      'jitter': args.jitter,
                       'include_null_action': args.abort_penalty < 0,
                       'ntrials': args.ntrials_per_episode}
         env = Beron2022(**env_params)
@@ -281,6 +282,8 @@ if __name__ == '__main__':
                         default=1, help='episodes between printing status')
     parser.add_argument('--target_update_period', type=int,
                         default=1, help='time steps between target network updates')
+    parser.add_argument('--jitter', type=int,
+                        default=0, help='jitter on beron reward timing')
     parser.add_argument('-g', '--gamma', type=float,
                         default=0.9, help='reward discount factor')
     parser.add_argument('--lmbda', type=float,

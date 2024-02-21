@@ -32,6 +32,8 @@ kwd = 'lowgamma'
 # kwd = 'softmaxtest'
 # kwd = 'kltest6'
 kwd = 'tspen4v2'
+kwd = 'tspen4v4'
+kwd = '_tspen4_'
 fnms = glob.glob(os.path.join('data', 'models', '*{}*.json'.format(kwd)))
 
 print('Found {} models.'.format(len(fnms)))
@@ -65,15 +67,18 @@ ntrials = 2000
 # 'tspen2': min_iti:1, max_iti:2, reward_delay:0, abort_penalty:-0.1
 # note: grans/granz are not trained well, so they're basically useless
 # note: for trial-level models, default was γ=0.9. does that affect the model results?
-kwd = 'tspen4v3'
+# kwd = 'tspen4v3'
+# kwd = 'tspen4v4'
+kwd = '_tspen4_'
 fnms = glob.glob(os.path.join('data', 'models', '*{}*.json'.format(kwd)))
 # fnms = keepers
+fnms = fnms[2:3]
 print('Found {} models.'.format(len(fnms)))
 
 AllTrials = []
 AllTrialsRand = []
 for fnm in fnms:
-    Trials, Trials_rand, _, _ = eval_model(fnm, ntrials, epsilon, tau)
+    Trials, Trials_rand, _, env = eval_model(fnm, ntrials, epsilon, tau)
     AllTrials.append(Trials)
     AllTrialsRand.append(Trials_rand)
 
@@ -82,6 +87,8 @@ plot_switching_by_symbol([Trials['test'] for Trials in AllTrials], wordOrder=mou
 plot_average_actions_around_switch([Trials['test'] for Trials in AllTrials])
 
 #%%
+
+# todo: empirically seems to break once we have a reward delay...?
 
 feature_params = {
     'choice': 1, # choice history
@@ -109,21 +116,25 @@ plot_decoding_weights_grouped(weights, std_errors, feature_params, title='Mouse'
 
 from plotting.behavior import get_action
 
+scale = 100 # scale=100 in old models where we had r/100
 gamma = 0.9
-trials = AllTrials[0]['test']
+trials = AllTrials[0]['test']#[:50]
 V = np.hstack([[q[a] for a,q in zip(trial.A, trial.Q)] for trial in trials])
-Qmax = np.hstack([[q.max() for a,q in zip(trial.A, trial.Q)] for trial in trials])
+Qmax = np.hstack([[q.max() for q in trial.Q] for trial in trials])
 R = np.hstack([trial.R for trial in trials])
-RPE = R[:-1] + gamma*Qmax[1:] - V[:-1]
+RPE = R[:-1]/scale + gamma*Qmax[1:] - V[:-1]
+RPE = np.hstack([np.nan, RPE[:-1]]) # delay by one since RPE[t] requires next obs
+
+min_iti = np.min([trial.iti for trial in trials])
+max_iti = np.max([trial.iti for trial in trials])
+max_n = np.max([len(trial) for trial in trials]) + min_iti # max trial length
+
 i = 0
-tPost = 3
 for trial in trials:
-    trial.V = V[i:(i+len(trial)+tPost)]
-    trial.RPE = RPE[i:(i+len(trial)+tPost)]
+    trial.V = V[i:(i+len(trial)+min_iti)]
+    trial.RPE = RPE[i:(i+len(trial)+min_iti)]
     i += len(trial)
 
-t_pre = np.max([trial.iti for trial in trials])
-n = np.max([len(trial) for trial in trials])+tPost # total trial length
 ys = {}
 conds = []
 for i,trial in enumerate(trials[:-1]): # ignore last trial because RPE is shorter
@@ -138,37 +149,114 @@ for i,trial in enumerate(trials[:-1]): # ignore last trial because RPE is shorte
     conds.append(cond)
     if cond == 'aborted':
         continue
-    t_start = max([0, trial.iti-t_pre])
+    t_start = max([0, trial.iti-max_iti])
     yv = trial.V[t_start:]
     yr = trial.RPE[t_start:]
-    if len(yv) < n:
-        yv = np.hstack([[np.nan]*(n-len(yv)), yv])
-        yr = np.hstack([[np.nan]*(n-len(yr)), yr])
+    yr[0] = np.nan # ignore RPE from previous trial
 
-    if cond == 'unrewarded' and len(yr) == 2:
-        print(i)
+    # get recent reward count
+    if i > 3:
+        # recent rewards in last 3 trials, each either -1 or 1
+        rs = 2*np.array([trial.R.sum() for trial in trials[(i-3):i]])-1
+        # count recent rewards how I think celia does
+        if len(np.unique(rs)) == 1:
+            nrs = rs.sum()
+        elif rs[-1] != rs[-2]:
+            nrs = rs[-1]
+        elif rs[-1] != rs[-3]:
+            nrs = rs[-2:].sum()
+        else:
+            assert False
+    else:
+        nrs = np.nan
+    nrs = nrs*np.ones(len(yv))
+
+    if trial.iti < max_iti:
+        nc = max_iti - trial.iti
+        yv = np.hstack([[np.nan]*nc, yv])
+        yr = np.hstack([[np.nan]*nc, yr])
+        nrs = np.hstack([[np.nan]*nc, nrs])
+    if len(yv) < max_n:
+        yv = np.hstack([yv, [np.nan]*(max_n-len(yv))])
+        yr = np.hstack([yr, [np.nan]*(max_n-len(yr))])
+        nrs = np.hstack([nrs, [np.nan]*(max_n-len(nrs))])
+
     if cond not in ys:
         ys[cond] = []
-    ys[cond].append((yv, yr))
+    ys[cond].append((yv, yr, nrs))
 
 for cond in ys:
     ys[cond] = np.dstack(ys[cond])
 
-plt.figure(figsize=(3,6))
+ncols = 1; nrows = 2
+ncols = 2; nrows = 1
+clrs = {'rewarded': np.array([45, 107, 207])/255, 'unrewarded': [0.8,0.2,0.2]}
+plt.figure(figsize=(3*ncols,3*nrows))
 for i in range(2):
-    plt.subplot(2,1,i+1)
+    plt.subplot(nrows,ncols,i+1)
     for cond, vs in ys.items():
+        if cond not in ['rewarded', 'unrewarded']:
+            continue
         vsc = vs[i,:,:]
         if len(vsc) == 0:
             continue
         mu = np.nanmean(vsc, axis=1)
-        xs = np.arange(len(mu)) - t_pre - 1
-        plt.plot(xs, mu, '.-', label=cond)
+        xs = np.arange(len(mu)) - max_iti - 1
+        plt.plot(xs, mu, '.-', label=cond, color=clrs.get(cond, 'k'))
     plt.title('Value' if i==0 else 'RPE')
     plt.xlabel('time rel. to go cue')
     plt.ylabel('Value' if i==0 else 'RPE')
-    plt.legend(fontsize=10)
+    plt.legend(fontsize=10, loc='lower left')
+    plt.plot(plt.xlim(), [0,0], 'k-', zorder=-1, alpha=0.5)
 plt.tight_layout()
+plt.show()
+
+clrs = plt.get_cmap('RdBu', 6)
+plt.figure(figsize=(3*ncols,3*nrows))
+for i in range(2):
+    plt.subplot(nrows,ncols,i+1)
+    for cond, vs in ys.items():
+        if cond not in ['rewarded', 'unrewarded']:
+            continue
+        nrs = vs[-1,:,:]
+        vsc = vs[i,:,:]
+        if len(vsc) == 0:
+            continue
+        for nr in [-3,-2,-1,1,2,3]:
+            ix = np.nanmax(nrs, axis=0) == nr
+            if ix.sum() == 0:
+                continue
+            mu = np.nanmean(vsc[:,ix], axis=1)
+            xs = np.arange(len(mu)) - max_iti - 1
+            plt.plot(xs, mu, '.-' if cond == 'rewarded' else '.--',
+                     label=nr, color=clrs(nr+3))
+    # plt.xlim([-0.5,0.5])
+    plt.title('Value' if i==0 else 'RPE')
+    plt.xlabel('time rel. to go cue')
+    plt.ylabel('Value' if i==0 else 'RPE')
+    # plt.legend(fontsize=10, loc='lower left')
+    plt.plot(plt.xlim(), [0,0], 'k-', zorder=-1, alpha=0.5)
+plt.tight_layout()
+
+#%% visualize trial data
+
+t = 0
+
+trial = trials[t]
+V = np.array([q[a] for q,a in zip(trial.Q, trial.A)])
+Qmax = np.array([q.max() for q in trial.Q])
+R = trial.R
+RPE = R[:-1] + gamma*Qmax[1:] - V[:-1]
+
+plt.plot(np.arange(len(trials[t].V))-trials[t].iti-1, trials[t].V, '.-')
+# plt.plot(np.arange(len(RPE))-trials[t].iti-1, RPE, '.-')
+# plt.plot(np.arange(len(trials[t].V))-trials[t].iti-1, trials[t].RPE, '.-')
+
+print(np.round(np.hstack([trials[t].X, trials[t].A[:,None], trials[t].R[:,None], 10*trials[t].V[:len(trials[t]),None],  10*trials[t].Q]),1))
+
+t += 1
+print(np.round(np.hstack([trials[t].X, trials[t].A[:,None], trials[t].R[:,None], 10*trials[t].V[:len(trials[t]),None],  10*trials[t].Q]),1))
+
 
 #%% plot belief R^2
 

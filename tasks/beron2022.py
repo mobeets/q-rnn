@@ -9,7 +9,7 @@ class Beron2022(gym.Env):
     def __init__(self, p_rew_max=0.8, p_switch=0.02, ntrials=200,
                  iti_min=0, iti_p=0.5, iti_max=0, iti_dist='geometric',
                  const_isi_signal=True, reward_delay=0, max_trial_length=10,
-                 include_null_action=False, abort_penalty=0):
+                 jitter=0, include_null_action=False, abort_penalty=0):
         self.observation_space = spaces.Discrete(2) # 0 during ITI, 1 during ISI
         self.action_space = spaces.Discrete(2 + include_null_action) # left port, right port, null [optional]
         self.include_null_action = include_null_action
@@ -19,6 +19,7 @@ class Beron2022(gym.Env):
         self.abort_penalty = abort_penalty # penalty for acting during ITI (if include_null_action==True)
         self.const_isi_signal = const_isi_signal # if True, input is 1 throughout ISI; if False, input occurs only at transition
         self.reward_delay = reward_delay # delay between choice and reward
+        self.jitter = jitter # jitter in reward_delay (positive  noise only)
         self.max_trial_length = max_trial_length # max trial length (excluding ITI)
         if not self.include_null_action and self.abort_penalty != 0:
             raise Exception("Cannot provide a nonzero abort penalty if there is no null action")
@@ -89,7 +90,7 @@ class Beron2022(gym.Env):
                 self.decision_time = self.t
                 self.r = int(self.rng_reward.random() < p_reward)
         
-        if self.decision_time is not None and self.t - self.decision_time >= self.reward_delay:
+        if self.decision_time is not None and self.t - self.decision_time >= self.cur_reward_delay:
             if verbose:
                 print('reward delivery', self.r)
             return self.r, True
@@ -97,7 +98,7 @@ class Beron2022(gym.Env):
             return 0, False
         
     def _get_info(self):
-        return {'state': self.state, 'iti': self.iti, 't': self.t, 'trial_index': self.trial_index}
+        return {'state': self.state, 'iti': self.iti, 't': self.t, 'trial_index': self.trial_index, 'reward_delay': self.cur_reward_delay}
     
     def _new_trial(self):
         self.trial_index += 1
@@ -105,6 +106,11 @@ class Beron2022(gym.Env):
         self.decision_time = None
         self.t = -1 # -1 to ensure we get at least one ITI observation between trials
         self.iti = get_itis(self, ntrials=1)[0]
+
+        # get current reward delay (with jitter)
+        self.cur_reward_delay = self.reward_delay
+        if self.jitter > 0:
+            self.cur_reward_delay += self.rng_reward.choice(np.arange(0, self.jitter+1))
         self._update_state()
 
     def reset(self, seed=None, options=None):
