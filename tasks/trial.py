@@ -23,12 +23,13 @@ class Trial:
         self.Z = [] # rnn activations
         self.R = [] # rewards
         self.R_penalties = [] # penalties (e.g., intrinsic rewards)
+        self.Margprefs = []
         self.trial_length = 0
         self.index_in_episode = index_in_episode
         self.episode_index = episode_index
         self.tag = None
 
-    def update(self, o, a, r, h, q, s=None, r_penalty=None):
+    def update(self, o, a, r, h, q, s=None, r_penalty=None, margprefs=None):
         if len(self.X) == 0:
             self.X = o[None,:]
             self.A = np.array([a])
@@ -37,6 +38,8 @@ class Trial:
             self.Q = q.flatten()[None,:]
             self.S = np.array([s])
             self.R_penalties = np.array([r_penalty])
+            if margprefs is not None:
+                self.Margprefs = margprefs.flatten()[None,:]
         else:
             self.X = np.vstack([self.X, o])
             self.A = np.hstack([self.A, [a]])
@@ -45,6 +48,8 @@ class Trial:
             self.R = np.hstack([self.R, [r]])
             self.S = np.hstack([self.S, [s]])
             self.R_penalties = np.hstack([self.R_penalties, [r_penalty]])
+            if margprefs is not None:
+                self.Margprefs = np.vstack([self.Margprefs, margprefs.flatten()])
         self.trial_length = len(self.X)
 
     def __getitem__(self, key):

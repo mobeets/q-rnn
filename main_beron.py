@@ -61,7 +61,7 @@ from plotting.behavior import plot_decoding_weights, mouseWordOrder
 # epsilon = 0.001; tau = None
 epsilon = None; tau = 0.001
 # ntrials = 10000
-ntrials = 5000
+ntrials = 1000
 
 # 'grant': H=10 trial-level, 'granz': timestep; 'grans': H=2 timestep; 'granasoft': H=10 trial-level w/ softmax; 'granb': H=3 trial-level; 'lowgamma': H=10 trial-level, γ=0.2
 # 'tspen_1969': min_iti:2, max_iti:7, reward_delay:1, abort_penalty:0
@@ -86,7 +86,7 @@ AllTrialsRand = []
 perfs = []
 for fnm in fnms:
     args = json.load(open(fnm))
-    args['kl_penalty'] = 80; args['margpol_alpha'] = 0.99
+    args['kl_penalty'] = 1; args['margpol_alpha'] = 0.99
 
     Trials, Trials_rand, _, env = eval_model(args, ntrials, epsilon, tau)
     AllTrials.append(Trials)
@@ -105,6 +105,49 @@ if len(perfs) > 1:
     plt.bar(np.arange(len(perfs)), perfs.sum(axis=1))
     plt.bar(np.arange(len(perfs)), perfs[:,0])
     plt.xlabel('model index'), plt.ylabel('outcomes'), plt.ylim([0,1]), plt.show()
+
+#%% visualize policy before/after KL term is added to policy
+
+import torch.nn as nn
+
+showPrefs = True
+
+Q = np.vstack([trial.Q for trial in Trials['train']])
+A = np.hstack([trial.A for trial in Trials['train']])
+H = Q/tau
+Pol = nn.functional.softmax(torch.Tensor(H), dim=-1).numpy()
+
+t1 = 500
+t2 = t1 + 25
+
+kl_alpha = 0.99999
+kl_beta = 150
+
+plt.figure(figsize=(6,3))
+
+margpol = np.ones(3)/3
+MargPol = []
+for pol in Pol:
+    margpol = (1-kl_alpha)*margpol + kl_alpha*pol
+    MargPol.append(margpol)
+MargPol = np.vstack(MargPol)
+# MargPol = M4['P'] # todo: compute marginal policy given kl_alpha
+
+H_pc = H + kl_beta*MargPol
+Pol_pc = nn.functional.softmax(torch.Tensor(H_pc), dim=-1).numpy()
+
+if showPrefs:
+    plt.plot(H)
+    plt.gca().set_prop_cycle(None)
+    plt.plot(H_pc, '--')
+else:
+    plt.plot(Pol)
+    plt.gca().set_prop_cycle(None)
+    plt.plot(Pol_pc - 1.2)
+
+plt.xlabel('time')
+plt.ylabel('action prefs' if showPrefs else 'π(a | s)')
+plt.xlim([t1, t2])
 
 #%% plot behavior as a function of observation history
 

@@ -42,15 +42,16 @@ def plot_average_actions_around_switch(AllTrials, tBefore=10, tAfter=20, doShow=
         values = []
         for trials in AllTrials:
             S = np.hstack([trial.S[-1] for trial in trials])
-            A = np.hstack([get_action(trial) for trial in trials])
+            A = np.hstack([get_action(trial, abort_value=-1) for trial in trials])
             switchInds = np.hstack([0, np.where(np.diff(S) != 0)[0] + 1, len(S)+1])
             
             if showHighPort:
-                # Y = np.hstack([trial.S[-1] == trial.A[-1] for trial in trials])
                 Y = (S == A)
+                Y[(A < 0) | (A > 1)] = np.nan # ignore aborts or timeouts
             else:
-                # Y = np.hstack([False, np.hstack([trials[t+1].A[-1] != trials[t].A[-1] for t in range(len(trials)-1)])])
                 Y = np.hstack([False, A[1:] != A[:-1]])
+                # ignore aborts or timeouts
+                Y[np.hstack([False, (A[1:] < 0) | (A[1:] > 1) | (A[:-1] < 0) | (A[:-1] > 1)])] = np.nan
 
             As = []
             for i in range(len(switchInds)-1):
@@ -75,7 +76,7 @@ def plot_average_actions_around_switch(AllTrials, tBefore=10, tAfter=20, doShow=
             values.append(np.nanmean(As, axis=0))
 
         xs = np.arange(-tBefore, tAfter)
-        mus = np.vstack(values).mean(axis=0)
+        mus = np.nanmean(np.vstack(values), axis=0)
         ses = np.nanstd(np.vstack(values), axis=0)/np.sqrt(len(values))
         if len(values) > 1:
             for vs in values:
@@ -143,10 +144,15 @@ def plot_switching_by_symbol(AllTrials, doShow=True, wordOrder=None, modelBased=
 
     # counts per model
     for trials in AllTrials:
-        symbs = [toSymbol(get_action(trial), trial.R[-1]) for trial in trials]
+        # remove any trials with aborts or timeouts
+        keepTrial = lambda action: (action >= 0) and (action < 2)
+        ctrials = [trial for trial in trials if keepTrial(get_action(trial, abort_value=-1))]
+
+        # convert each action/reward pair to a symbol (LlRr)
+        symbs = [toSymbol(get_action(trial, abort_value=-1), trial.R[-1]) for trial in ctrials]
         switches = []
-        for i in range(len(trials)-wordLength-1):
-            ctrials = trials[i:(i+wordLength+1)]
+        for i in range(len(ctrials)-wordLength-1):
+            ctrials = ctrials[i:(i+wordLength+1)]
             if len(set([trial.episode_index for trial in ctrials])) > 1:
                 continue
             csymbs = symbs[i:(i+wordLength+1)]

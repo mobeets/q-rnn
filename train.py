@@ -111,7 +111,7 @@ def probe_model(model, env, nepisodes, behavior_policy=None, epsilon=0, tau=tol,
                 # save
                 hc = h.numpy() if hasattr(h, 'numpy') else np.array(h)
                 qc = q.numpy() if hasattr(q, 'numpy') else np.array(q)
-                trial.update(obs, a, r, hc, qc, info.get('state', None), r_penalty=r_penalty)
+                trial.update(obs, a, r, hc, qc, info.get('state', None), r_penalty=r_penalty, margprefs=margprefs)
                 if new_trial:
                     trials.append(trial)
                     if hasattr(env, 'iti'):

@@ -162,13 +162,12 @@ def get_mouse_decoding_weights(mouse_trials, feature_params):
 
 def get_rnn_decoding_weights(AllTrials, feature_params, skip_aborts=True, skip_timeouts=True):
     rnn_features = {}
-    print('here')
     for name in ['train', 'test']:
         rnn_features[name] = []
         for Trials in AllTrials:
             trials = Trials[name]
             # A = np.hstack([trial.A[-1] for trial in trials])
-            A = np.hstack([get_action(trial, abort_value=-1) for trial in trials])
+            A = np.hstack([get_action(trial, abort_value=-1 if skip_aborts else None) for trial in trials])
             R = np.hstack([trial.R[-1] for trial in trials])
             ix = np.ones(len(A)).astype(bool)
             if skip_aborts:
