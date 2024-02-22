@@ -6,7 +6,7 @@ import json
 import numpy as np
 import torch
 from model import DRQN
-from tasks.beron2022 import Beron2022, Beron2022_TrialLevel, BeronCensorWrapper, BeronWrapper
+from tasks.beron2022 import Beron2022, Beron2022_TrialLevel, BeronCensorWrapper, BeronWrapper, get_action
 from tasks.wrappers import PreviousRewardWrapper, PreviousActionWrapper
 from train import probe_model
 from analyze import add_beliefs_beron2022
@@ -59,9 +59,9 @@ from analysis.decoding_beron import get_rnn_decoding_weights, get_mouse_decoding
 from plotting.behavior import plot_decoding_weights, mouseWordOrder
 
 # epsilon = 0.001; tau = None
-epsilon = None; tau = 0.00001
+epsilon = None; tau = 0.001
 # ntrials = 10000
-ntrials = 2000
+ntrials = 5000
 
 # 'grant': H=10 trial-level, 'granz': timestep; 'grans': H=2 timestep; 'granasoft': H=10 trial-level w/ softmax; 'granb': H=3 trial-level; 'lowgamma': H=10 trial-level, γ=0.2
 # 'tspen_1969': min_iti:2, max_iti:7, reward_delay:1, abort_penalty:0
@@ -75,7 +75,7 @@ kwd = 'tspen4v4'
 kwd = '_tspen4_'
 # kwd = 'tskl3'
 # kwd = '_tspen5_'
-kwd = 'softmax4'
+kwd = 'softmax5'
 fnms = glob.glob(os.path.join('data', 'models', '*{}*.json'.format(kwd)))
 # fnms = keepers
 # fnms = fnms[2:3]
@@ -86,7 +86,8 @@ AllTrialsRand = []
 perfs = []
 for fnm in fnms:
     args = json.load(open(fnm))
-    # args['kl_penalty'] = 1; args['margpol_alpha'] = 0.8
+    args['kl_penalty'] = 80; args['margpol_alpha'] = 0.99
+
     Trials, Trials_rand, _, env = eval_model(args, ntrials, epsilon, tau)
     AllTrials.append(Trials)
     AllTrialsRand.append(Trials_rand)
@@ -94,7 +95,9 @@ for fnm in fnms:
     # get reward rate as mean number of correct trials
     rr = np.mean([trial.R.sum()>0 for trial in Trials['train']])
     abort_rate = np.mean([trial.R.min()<0 for trial in Trials['train']])
-    print(f'correct rate: {rr:0.2f}, abort rate: {abort_rate:0.2f}')
+    decs = np.array([get_action(trial, abort_value=-1) for trial in Trials['train']])
+    margpol = {d: np.round(np.mean(decs == d),2) for d in np.unique(decs)}
+    print(f'correct rate: {rr:0.2f}, abort rate: {abort_rate:0.2f}, marg pol: {margpol}')
     perfs.append((rr, abort_rate))
 
 if len(perfs) > 1:
@@ -103,20 +106,21 @@ if len(perfs) > 1:
     plt.bar(np.arange(len(perfs)), perfs[:,0])
     plt.xlabel('model index'), plt.ylabel('outcomes'), plt.ylim([0,1]), plt.show()
 
+#%% plot behavior as a function of observation history
+
 wordSize = 2
 plot_switching_by_symbol([Trials['test'] for Trials in AllTrials], wordOrder=None, wordSize=wordSize)
 plot_switching_by_symbol([Trials['test'] for Trials in AllTrials], wordOrder=mouseWordOrder[wordSize], wordSize=wordSize)
 plot_average_actions_around_switch([Trials['test'] for Trials in AllTrials])
 
-#%%
+#%% plot decoding weights
 
-# todo: empirically seems to break once we have a reward delay...?
-
+showMouse = False
 feature_params = {
-    'choice': 1, # choice history
-    'reward': 1, # reward history
-    'choice*reward': 10, # rewarded trials, aligned to action (original)
-    '-choice*omission': 10, # unrewarded trials, aligned to action
+    'choice': 2, # choice history
+    'reward': 2, # reward history
+    'choice*reward': 5, # rewarded trials, aligned to action (original)
+    '-choice*omission': 5, # unrewarded trials, aligned to action
     'A': 0, # rewarded trials, left choice
     'a': 0, # unrewarded trials, left choice
     'B': 0, # rewarded trials, right choice
@@ -129,10 +133,11 @@ feature_params = {
 weights, std_errors, names, lls = get_rnn_decoding_weights(AllTrials, feature_params)
 plot_decoding_weights_grouped(weights, std_errors, feature_params, title='Value RNN')
 
-if 'mouse_trials' not in vars():
-    mouse_trials = load_mouse_data()
-weights, std_errors, names, lls = get_mouse_decoding_weights(mouse_trials, feature_params)
-plot_decoding_weights_grouped(weights, std_errors, feature_params, title='Mouse')
+if showMouse:
+    if 'mouse_trials' not in vars():
+        mouse_trials = load_mouse_data()
+    weights, std_errors, names, lls = get_mouse_decoding_weights(mouse_trials, feature_params)
+    plot_decoding_weights_grouped(weights, std_errors, feature_params, title='Mouse')
 
 #%% visualize RPEs (timestep-level only)
 

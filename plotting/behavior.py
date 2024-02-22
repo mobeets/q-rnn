@@ -2,6 +2,7 @@ import numpy as np
 from plotting.base import plt
 from matplotlib.patches import Rectangle, Polygon
 import torch
+from tasks.beron2022 import get_action
 
 def plot_example_actions(trials, doShow=True):
     """
@@ -29,11 +30,6 @@ def plot_example_actions(trials, doShow=True):
     plt.tight_layout()
     if doShow:
         plt.show()
-
-def get_action(trial):
-    # get action on each trial (accounting for a possible reward delay)
-    # return trial.A[-1]
-    return trial.A[np.where(trial.X[:,0] == 1)[0][0]] if trial.X[:,0].sum() >= 1 else trial.A[-1]
 
 def plot_average_actions_around_switch(AllTrials, tBefore=10, tAfter=20, doShow=True):
     """

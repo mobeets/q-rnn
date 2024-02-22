@@ -38,7 +38,7 @@ class PreviousActionWrapper(Wrapper):
         return new_obs, reward, terminated, truncated, info
 
 class KLMarginal:
-    def __init__(self, weight, margpol_alpha, nactions, include_prev_reward, min_penalty=-2, max_penalty=2):
+    def __init__(self, weight, margpol_alpha, nactions, min_penalty=-2, max_penalty=2):
         if weight < 0:
             raise Exception("KL penalty should be positive")
         if margpol_alpha <= 0 or margpol_alpha > 1:
@@ -46,16 +46,19 @@ class KLMarginal:
         self.weight = weight
         self.alpha = margpol_alpha
         self.nactions = nactions
-        self.include_prev_reward = include_prev_reward
         self.min_penalty = min_penalty
         self.max_penalty = max_penalty
 
     def reset(self):
         self.marginal_pol = np.ones(self.nactions,)/self.nactions
 
-    def step(self, action, q, tau):
+    def step(self, action, q, tau, margpol_in_policy=True):
         # calculate penalty
-        pol = F.softmax(q.detach()/tau, dim=-1).numpy().flatten()
+        # todo: add in margpol here as well
+        if margpol_in_policy:
+            pol = F.softmax(q.detach()/tau + self.weight*self.marginal_pol, dim=-1).numpy().flatten()
+        else:
+            pol = F.softmax(q.detach()/tau, dim=-1).numpy().flatten()
         r_penalty = np.log(pol[action]) - np.log(self.marginal_pol[action])
 
         # constrain penalty within bounds

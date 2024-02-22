@@ -91,9 +91,7 @@ def probe_model(model, env, nepisodes, behavior_policy=None, epsilon=0, tau=tol,
             while not done:   
                 # get action
                 cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
-                margprefs = None
-                if kl is not None:
-                    margprefs = kl.weight * kl.marginal_pol
+                margprefs = kl.weight*kl.marginal_pol if kl is not None else None
                 if behavior_policy is None:
                     if hasattr(h, 'to'):
                         h = h.to(device)
@@ -107,14 +105,7 @@ def probe_model(model, env, nepisodes, behavior_policy=None, epsilon=0, tau=tol,
 
                 # take action
                 obs_next, r, done, truncated, info_next = env.step(a)
-                if kl is not None:
-                    r_penalty = kl.step(a, q, tau)
-                    if kl.include_prev_reward:
-                        # assert np.isclose(r+r_penalty, obs_next[1])
-                        obs_next[1] = r
-                    r -= r_penalty # n.b. obs_next will only see raw r
-                else:
-                    r_penalty = 0
+                r_penalty = kl.step(a, q, tau) if kl is not None else 0
                 new_trial = info_next['t'] == -1
 
                 # save

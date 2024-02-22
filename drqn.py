@@ -159,7 +159,7 @@ def train_model(args):
 
         obs, info = env.reset()
         episode_record = EpisodeBuffer()
-        if args.kl_penalty > 0:
+        if kl is not None:
             kl.reset()
 
         done = False
@@ -167,17 +167,14 @@ def train_model(args):
             # get action
             cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
             margprefs = None
-            if args.kl_penalty > 0:
+            if kl is not None:
                 margprefs = kl.weight * kl.marginal_pol
             a, (q,h) = Q.sample_action(cobs, h.to(device), epsilon=epsilon, tau=tau, margprefs=margprefs)
 
             # take action
             obs_next, r, done, truncated, info = env.step(a)
-            if args.kl_penalty > 0:
+            if kl is not None:
                 r_penalty = kl.step(a, q, tau)
-                if kl.include_prev_reward:
-                    # assert np.isclose(r+r_penalty, obs_next[1])
-                    obs_next[1] = r
                 r -= r_penalty # n.b. obs_next will only include raw r
                 
             # make data

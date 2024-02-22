@@ -4,6 +4,7 @@ from sklearn import preprocessing
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import log_loss
 from sklearn.model_selection import train_test_split
+from tasks.beron2022 import get_action
 
 def list_to_str(seq):
     seq = [str(el) for el in seq] # convert element of sequence to string
@@ -159,13 +160,21 @@ def load_mouse_data(filename='data/mouse/mouse_data.csv'):
 def get_mouse_decoding_weights(mouse_trials, feature_params):
     return get_decoding_weights(mouse_trials, feature_params)
 
-def get_rnn_decoding_weights(AllTrials, feature_params):
+def get_rnn_decoding_weights(AllTrials, feature_params, skip_aborts=True, skip_timeouts=True):
     rnn_features = {}
+    print('here')
     for name in ['train', 'test']:
         rnn_features[name] = []
         for Trials in AllTrials:
             trials = Trials[name]
-            A = np.hstack([trial.A[-1] for trial in trials])
+            # A = np.hstack([trial.A[-1] for trial in trials])
+            A = np.hstack([get_action(trial, abort_value=-1) for trial in trials])
             R = np.hstack([trial.R[-1] for trial in trials])
+            ix = np.ones(len(A)).astype(bool)
+            if skip_aborts:
+                ix = ix & (A >= 0)
+            if skip_timeouts:
+                ix = ix & (A < 2)
+            A = A[ix]; R = R[ix]
             rnn_features[name].append([A,R])
     return get_decoding_weights(rnn_features, feature_params)

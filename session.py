@@ -15,7 +15,7 @@ def eval_model(args, ntrials, epsilon=None, tau=None, verbose=False):
         'ntrials': ntrials}
     hidden_size = args['hidden_size']
     modelfile = args['filenames']['weightsfile_final']
-    # modelfile = args['filenames']['weightsfile_recent']
+    modelfile = args['filenames']['weightsfile_recent']; print('warning: using recent not final')
     initial_modelfile = args['filenames']['weightsfile_initial']
     if verbose:
         print('H={}, prew={}, pswitch={}'.format(hidden_size, env_params['p_rew_max'], env_params['p_switch']))
@@ -46,7 +46,7 @@ def eval_model(args, ntrials, epsilon=None, tau=None, verbose=False):
         env = BeronCensorWrapper(env, args['include_beron_wrapper'])
 
     if args.get('kl_penalty', 0) > 0:
-        kl = KLMarginal(args['kl_penalty'], args['margpol_alpha'], env.action_space.n, args['include_prev_reward'])
+        kl = KLMarginal(args['kl_penalty'], args['margpol_alpha'], env.action_space.n)
     else:
         kl = None
     

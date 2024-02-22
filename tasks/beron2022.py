@@ -5,6 +5,20 @@ import numpy as np
 from numpy.random import default_rng
 from tasks.trial import get_itis
 
+def get_action(trial, abort_value=None, timeout_action=2):
+    # get action on each trial (accounting for a possible reward delay)
+    if trial.X[:,0].sum() >= 1:
+        ts = np.where(trial.X[:,0] == 1)[0]
+        actions = trial.A[ts]
+        if np.any(actions != timeout_action):
+            # decision is first non-null action following ISI start
+            return actions[np.where(actions != timeout_action)[0][0]]
+        else:
+            return actions[-1] # should be timeout action
+    else:
+        return abort_value if abort_value is not None else trial.A[-1]    
+    # return trial.A[np.where(trial.X[:,0] == 1)[0][0]] if trial.X[:,0].sum() >= 1 else trial.A[-1] # note the latter is actually an abort
+
 class Beron2022(gym.Env):
     def __init__(self, p_rew_max=0.8, p_switch=0.02, ntrials=200,
                  iti_min=0, iti_p=0.5, iti_max=0, iti_dist='geometric',
