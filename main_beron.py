@@ -29,11 +29,12 @@ kwd = 'lowgamma'
 # kwd = '_ts3'
 # kwd = 'tspen_1969'
 # kwd = '_ts3'
-# kwd = 'softmaxtest'
+kwd = 'softmaxtest'
 # kwd = 'kltest6'
-kwd = 'tspen4v2'
-kwd = 'tspen4v4'
-kwd = '_tspen4_'
+# kwd = 'tspen4v2'
+# kwd = 'tspen4v4'
+# kwd = '_tspen4_'
+# kwd = '_tspen5_'
 fnms = glob.glob(os.path.join('data', 'models', '*{}*.json'.format(kwd)))
 
 print('Found {} models.'.format(len(fnms)))
@@ -57,8 +58,8 @@ from plotting.behavior import plot_example_actions, plot_average_actions_around_
 from analysis.decoding_beron import get_rnn_decoding_weights, get_mouse_decoding_weights, load_mouse_data
 from plotting.behavior import plot_decoding_weights, mouseWordOrder
 
-epsilon = 0.001; tau = None
-# epsilon = None; tau = 0.1
+# epsilon = 0.001; tau = None
+epsilon = None; tau = 0.00001
 # ntrials = 10000
 ntrials = 2000
 
@@ -68,22 +69,43 @@ ntrials = 2000
 # note: grans/granz are not trained well, so they're basically useless
 # note: for trial-level models, default was γ=0.9. does that affect the model results?
 # kwd = 'tspen4v3'
-# kwd = 'tspen4v4'
+kwd = 'tspen4v4'
+# kwd = 'tspen4v5'
+# kwd = 'tspen4v6'
 kwd = '_tspen4_'
+# kwd = 'tskl3'
+# kwd = '_tspen5_'
+kwd = 'softmax4'
 fnms = glob.glob(os.path.join('data', 'models', '*{}*.json'.format(kwd)))
 # fnms = keepers
-fnms = fnms[2:3]
+# fnms = fnms[2:3]
 print('Found {} models.'.format(len(fnms)))
 
 AllTrials = []
 AllTrialsRand = []
+perfs = []
 for fnm in fnms:
-    Trials, Trials_rand, _, env = eval_model(fnm, ntrials, epsilon, tau)
+    args = json.load(open(fnm))
+    # args['kl_penalty'] = 1; args['margpol_alpha'] = 0.8
+    Trials, Trials_rand, _, env = eval_model(args, ntrials, epsilon, tau)
     AllTrials.append(Trials)
     AllTrialsRand.append(Trials_rand)
 
-plot_switching_by_symbol([Trials['test'] for Trials in AllTrials], wordOrder=None)
-plot_switching_by_symbol([Trials['test'] for Trials in AllTrials], wordOrder=mouseWordOrder)
+    # get reward rate as mean number of correct trials
+    rr = np.mean([trial.R.sum()>0 for trial in Trials['train']])
+    abort_rate = np.mean([trial.R.min()<0 for trial in Trials['train']])
+    print(f'correct rate: {rr:0.2f}, abort rate: {abort_rate:0.2f}')
+    perfs.append((rr, abort_rate))
+
+if len(perfs) > 1:
+    perfs = np.vstack(perfs)
+    plt.bar(np.arange(len(perfs)), perfs.sum(axis=1))
+    plt.bar(np.arange(len(perfs)), perfs[:,0])
+    plt.xlabel('model index'), plt.ylabel('outcomes'), plt.ylim([0,1]), plt.show()
+
+wordSize = 2
+plot_switching_by_symbol([Trials['test'] for Trials in AllTrials], wordOrder=None, wordSize=wordSize)
+plot_switching_by_symbol([Trials['test'] for Trials in AllTrials], wordOrder=mouseWordOrder[wordSize], wordSize=wordSize)
 plot_average_actions_around_switch([Trials['test'] for Trials in AllTrials])
 
 #%%
@@ -116,7 +138,7 @@ plot_decoding_weights_grouped(weights, std_errors, feature_params, title='Mouse'
 
 from plotting.behavior import get_action
 
-scale = 100 # scale=100 in old models where we had r/100
+scale = 1 # scale=100 in old models where we had r/100
 gamma = 0.9
 trials = AllTrials[0]['test']#[:50]
 V = np.hstack([[q[a] for a,q in zip(trial.A, trial.Q)] for trial in trials])
@@ -127,7 +149,7 @@ RPE = np.hstack([np.nan, RPE[:-1]]) # delay by one since RPE[t] requires next ob
 
 min_iti = np.min([trial.iti for trial in trials])
 max_iti = np.max([trial.iti for trial in trials])
-max_n = np.max([len(trial) for trial in trials]) + min_iti # max trial length
+max_n = max_iti + np.max([len(trial.X[trial.iti:]) for trial in trials]) + min_iti # max trial length
 
 i = 0
 for trial in trials:
@@ -189,7 +211,7 @@ for cond in ys:
     ys[cond] = np.dstack(ys[cond])
 
 ncols = 1; nrows = 2
-ncols = 2; nrows = 1
+# ncols = 2; nrows = 1
 clrs = {'rewarded': np.array([45, 107, 207])/255, 'unrewarded': [0.8,0.2,0.2]}
 plt.figure(figsize=(3*ncols,3*nrows))
 for i in range(2):
@@ -257,6 +279,18 @@ print(np.round(np.hstack([trials[t].X, trials[t].A[:,None], trials[t].R[:,None],
 t += 1
 print(np.round(np.hstack([trials[t].X, trials[t].A[:,None], trials[t].R[:,None], 10*trials[t].V[:len(trials[t]),None],  10*trials[t].Q]),1))
 
+#%%
+
+eps_start = 0.6 # initial epsilon used in policy
+eps_end = 0.001 # final epsilon used in policy
+eps_decay = 0.995 # time constant of decay for epsilon used in policy
+epsilon = eps_start
+es = []
+for _ in range(300):
+    es.append(epsilon)
+    epsilon = max(eps_end, epsilon * eps_decay)
+
+plt.plot(es)
 
 #%% plot belief R^2
 

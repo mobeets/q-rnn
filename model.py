@@ -32,7 +32,7 @@ class DRQN(nn.Module):
     def reset_rng(self, seed):
         self.rng = default_rng(seed)
 
-    def sample_action(self, xin, hidden, epsilon=None, tau=None):
+    def sample_action(self, xin, hidden, epsilon=None, tau=None, margprefs=None):
         output = self.forward(xin, hidden)
         if epsilon is not None: # epsilon-greedy policy
             if self.rng.random() < epsilon: # choose random action
@@ -40,7 +40,10 @@ class DRQN(nn.Module):
             else: # choose best action
                 return output[0].argmax().item(), output
         elif tau is not None: # softmax policy
-            probs = nn.functional.softmax(output[0]/tau, dim=-1)
+            prefs = output[0]/tau
+            if margprefs is not None:
+                prefs += torch.Tensor(margprefs)
+            probs = nn.functional.softmax(prefs, dim=-1)
             return Categorical(probs=probs).sample().item(), output
     
     def init_hidden_state(self, batch_size=None, training=None):

@@ -124,13 +124,21 @@ def toWord(seq):
     else:
         assert False
 
-mouseWordOrder = ['AAA', 'aAA', 'AaA', 'aaA', 'AbB', 'aBB', 'aBA', 'ABA', 'abA', 'abB', 'aaB', 'ABB', 'AAa', 'AaB', 'AbA', 'aAa', 'aAB', 'AAB', 'Aaa', 'aBb', 'ABb', 'Aba', 'aba', 'aaa', 'aab', 'aBa', 'ABa', 'Aab', 'abb', 'AAb', 'aAb', 'Abb']
+mouseWordOrder = {
+    2: ['Ab', 'aa', 'ab', 'Aa', 'AB', 'aB', 'aA', 'AA'][::-1],
+    3: ['AAA', 'aAA', 'AaA', 'aaA', 'AbB', 'aBB', 'aBA', 'ABA', 'abA', 'abB', 'aaB', 'ABB', 'AAa', 'AaB', 'AbA', 'aAa', 'aAB', 'AAB', 'Aaa', 'aBb', 'ABb', 'Aba', 'aba', 'aaa', 'aab', 'aBa', 'ABa', 'Aab', 'abb', 'AAb', 'aAb', 'Abb'],
+}
 
-def plot_switching_by_symbol(AllTrials, doShow=True, wordOrder=None, modelBased=False, tau=None):
+def plot_switching_by_symbol(AllTrials, doShow=True, wordOrder=None, modelBased=False, tau=None, wordSize=3):
     """
     characterize switching probs given 'words', as in Fig. 2D of Beron et al. (2022)
     """
-    words = [x+y+z for x in 'Aa' for y in 'AaBb' for z in 'AaBb']
+    if wordSize == 3:
+        words = [x+y+z for x in 'Aa' for y in 'AaBb' for z in 'AaBb']
+    elif wordSize == 2:
+        words = [x+y for x in 'Aa' for y in 'AaBb']
+    else:
+        raise Exception(f"word size of {wordSize} not supported")
     if wordOrder is not None:
         words = wordOrder
     counts = {word: (0,0) for word in words}
@@ -178,7 +186,7 @@ def plot_switching_by_symbol(AllTrials, doShow=True, wordOrder=None, modelBased=
     xs = np.arange(len(freqs))
     grayOutInds = np.array([i for i,(x,y,z,n) in enumerate(freqs) if n <= 0]).astype(int)
 
-    plt.figure(figsize=(8,2.2))
+    plt.figure(figsize=(2.5*wordSize,2.2))
     for x, (_,p,se,n) in zip(xs, freqs):
         # plt.bar(x, n > 10, color='k', alpha=0.5)
         plt.bar(x, p, color='k', alpha=0.5 if se < 0.2 else 0.2)

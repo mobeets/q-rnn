@@ -8,14 +8,14 @@ from tasks.wrappers import PreviousRewardWrapper, PreviousActionWrapper, KLMargi
 from analyze import add_beliefs_beron2022
 device = torch.device('cpu')
 
-def eval_model(model_file, ntrials, epsilon=None, tau=None, verbose=False):
-    args = json.load(open(model_file))
+def eval_model(args, ntrials, epsilon=None, tau=None, verbose=False):
     env_params = {
         'p_rew_max': args.get('p_reward_max', 0.8),
         'p_switch': args.get('p_switch', 0.02),
         'ntrials': ntrials}
     hidden_size = args['hidden_size']
     modelfile = args['filenames']['weightsfile_final']
+    # modelfile = args['filenames']['weightsfile_recent']
     initial_modelfile = args['filenames']['weightsfile_initial']
     if verbose:
         print('H={}, prew={}, pswitch={}'.format(hidden_size, env_params['p_rew_max'], env_params['p_switch']))
@@ -25,7 +25,7 @@ def eval_model(model_file, ntrials, epsilon=None, tau=None, verbose=False):
                         'iti_dist': args.get('iti_dist', 'geometric'), 'iti_max': args.get('iti_max', 0), 
                         'abort_penalty': args.get('abort_penalty', 0),
                         'reward_delay': args.get('reward_delay', 0),
-                        'jitter': 0,#args.get('jitter', 0),
+                        'jitter': args.get('jitter', 0),
                         'include_null_action': args.get('abort_penalty', 0) < 0})
         print(env_params)
         env = Beron2022(**env_params)
@@ -45,16 +45,16 @@ def eval_model(model_file, ntrials, epsilon=None, tau=None, verbose=False):
     if args.get('include_beron_censor', False):
         env = BeronCensorWrapper(env, args['include_beron_wrapper'])
 
+    if args.get('kl_penalty', 0) > 0:
+        kl = KLMarginal(args['kl_penalty'], args['margpol_alpha'], env.action_space.n, args['include_prev_reward'])
+    else:
+        kl = None
+    
     model = DRQN(input_size=input_size, # empty + prev reward + prev actions
                     hidden_size=hidden_size,
                     output_size=env.action_space.n,
                     recurrent_cell=args.get('recurrent_cell', 'gru')).to(device)
     model.load_weights_from_path(modelfile)
-
-    if args.get('kl_penalty', 0) > 0:
-        kl = KLMarginal(args['kl_penalty'], args['margpol_alpha'], env.action_space.n, args['include_prev_reward'])
-    else:
-        kl = None
 
     # behavior_policy = DRQN(input_size=input_size, # empty + prev reward + prev actions
     #                 hidden_size=hidden_size,

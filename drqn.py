@@ -33,7 +33,7 @@ tau_end = 0.001 # final tau used in softmax policy
 tau_decay = 0.995 # time constant of decay for tau used in softmax policy
 
 tau_start = 0.5
-tau_end = 0.25
+tau_end = 0.1
 
 # memory params
 random_update = True # If you want to do random update instead of sequential update
@@ -57,10 +57,12 @@ def save_params(args, filenames, scores=None):
 def get_filenames(args):
     weightsfile_initial = os.path.join(args.save_dir, 'weights_initial_h{}_{}.pth'.format(args.hidden_size, args.run_name))
     weightsfile_final = os.path.join(args.save_dir, 'weights_final_h{}_{}.pth'.format(args.hidden_size, args.run_name))
+    weightsfile_recent = os.path.join(args.save_dir, 'weights_recent_h{}_{}.pth'.format(args.hidden_size, args.run_name))
     paramsfile = os.path.join(args.save_dir, 'results_h{}_{}.json'.format(args.hidden_size, args.run_name))
     filenames = {
         'weightsfile_initial': weightsfile_initial,
         'weightsfile_final': weightsfile_final,
+        'weightsfile_recent': weightsfile_recent,
         'paramsfile': paramsfile
     }
     return filenames
@@ -101,7 +103,7 @@ def train_model(args):
     if args.kl_penalty != 0:
         if not args.use_softmax_policy:
             raise Exception("You must use a softmax policy to add in a KL penalty")
-        kl = KLMarginal(args.kl_penalty, args.margpol_alpha, env.action_space.n, args.include_prev_reward)
+        kl = KLMarginal(args.kl_penalty, args.margpol_alpha, env.action_space.n)
     else:
         kl = None
     if args.include_prev_reward:
@@ -164,19 +166,21 @@ def train_model(args):
         while not done:
             # get action
             cobs = torch.from_numpy(obs).float().to(device).unsqueeze(0).unsqueeze(0)
-            a, (q,h) = Q.sample_action(cobs, h.to(device), epsilon=epsilon, tau=tau)
+            margprefs = None
+            if args.kl_penalty > 0:
+                margprefs = kl.weight * kl.marginal_pol
+            a, (q,h) = Q.sample_action(cobs, h.to(device), epsilon=epsilon, tau=tau, margprefs=margprefs)
 
             # take action
             obs_next, r, done, truncated, info = env.step(a)
             if args.kl_penalty > 0:
                 r_penalty = kl.step(a, q, tau)
-                r -= r_penalty
                 if kl.include_prev_reward:
                     # assert np.isclose(r+r_penalty, obs_next[1])
                     obs_next[1] = r
+                r -= r_penalty # n.b. obs_next will only include raw r
                 
             # make data
-            # episode_record.put([obs, a, r/100.0, obs_next, 0.0 if done else 1.0])
             episode_record.put([obs, a, r, obs_next, 0.0 if done else 1.0])
             obs = obs_next
 
@@ -205,17 +209,24 @@ def train_model(args):
         cur_score = np.hstack([x.R for x in test_trials]).mean()
         scores.append(cur_score)
 
-        if cur_score > best_score:
-            best_score = cur_score
-            print("New top score: {:0.3f}".format(best_score))
-            Q.checkpoint_weights()
-            Q.save_weights_to_path(filenames['weightsfile_final'], Q.saved_weights)
-            save_params(args, filenames, scores)
-
+        # print status
         if i % args.print_per_iter == 0 and i > 0:
             print("episode {} | loss: {:0.4f}, score: {:0.3f}, {}={:0.1f}%".format(i, cur_loss, cur_score,
                             'τ' if args.use_softmax_policy else 'ε',
                             100*(tau-tau_start)/(tau_end-tau_start) if args.use_softmax_policy else 100*(epsilon-eps_start)/(eps_end-eps_start)))
+        
+        # save model
+        if cur_score > best_score:
+            best_score = cur_score
+            print("   New top score: {:0.3f}".format(best_score))
+            Q.checkpoint_weights()
+            Q.save_weights_to_path(filenames['weightsfile_final'], Q.saved_weights)
+            save_params(args, filenames, scores)
+        elif i % args.save_per_iter == 0 and i > 0:
+            print("   Saving checkpoint.")
+            Q.save_weights_to_path(filenames['weightsfile_recent'])
+            save_params(args, filenames, scores)
+
     env.close()
 
 def train_model_outer(**args):
@@ -280,6 +291,8 @@ if __name__ == '__main__':
                         default=800, help='number of trials comprising an episode')
     parser.add_argument('--print_per_iter', type=int,
                         default=1, help='episodes between printing status')
+    parser.add_argument('--save_per_iter', type=int,
+                        default=5, help='episodes between saving checkpoint')
     parser.add_argument('--target_update_period', type=int,
                         default=1, help='time steps between target network updates')
     parser.add_argument('--jitter', type=int,

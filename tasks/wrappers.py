@@ -38,12 +38,12 @@ class PreviousActionWrapper(Wrapper):
         return new_obs, reward, terminated, truncated, info
 
 class KLMarginal:
-    def __init__(self, kl_penalty, margpol_alpha, nactions, include_prev_reward, min_penalty=-2, max_penalty=2):
-        if kl_penalty < 0:
+    def __init__(self, weight, margpol_alpha, nactions, include_prev_reward, min_penalty=-2, max_penalty=2):
+        if weight < 0:
             raise Exception("KL penalty should be positive")
         if margpol_alpha <= 0 or margpol_alpha > 1:
             raise Exception("margpol alpha should be between 0 and 1 (as in exponential smoothing)")
-        self.kl_penalty = kl_penalty
+        self.weight = weight
         self.alpha = margpol_alpha
         self.nactions = nactions
         self.include_prev_reward = include_prev_reward
@@ -67,7 +67,7 @@ class KLMarginal:
         # update marginal policy (using exponential smoothing)
         self.marginal_pol = (1-self.alpha)*self.marginal_pol + self.alpha*pol
 
-        return self.kl_penalty*r_penalty
+        return self.weight*r_penalty
 
 class PreviousRewardWrapper(Wrapper):
     """
